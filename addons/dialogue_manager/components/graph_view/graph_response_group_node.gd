@@ -27,6 +27,7 @@ const PORT_COLOR: Color = DMGraphNodeTheme.PORT_COLOR
 var group_data: Dictionary = {}
 var response_rows: Array[Dictionary] = []
 var _is_rebuilding: bool = false
+var _suppress_field_sync: bool = false
 
 
 func _ready() -> void:
@@ -127,6 +128,7 @@ func _rebuild_rows() -> void:
 		return
 
 	_is_rebuilding = true
+	_suppress_field_sync = true
 	_disconnect_own_connections()
 
 	for child: Node in get_children():
@@ -150,6 +152,11 @@ func _rebuild_rows() -> void:
 	_configure_slots()
 	_is_rebuilding = false
 	group_rebuilt.emit()
+	call_deferred("_end_row_rebuild")
+
+
+func _end_row_rebuild() -> void:
+	_suppress_field_sync = false
 	call_deferred("_relayout_all_response_rows")
 
 
@@ -224,7 +231,7 @@ func _create_response_row(row_data: Dictionary) -> HBoxContainer:
 	if_button.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	if_button.button_pressed = condition != ""
 
-	var condition_edit := DMGraphExpressionField.new()
+	var condition_edit: DMGraphExpressionField = DMGraphExpressionField.new()
 	condition_edit.name = "ConditionEdit"
 	condition_edit.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	condition_edit.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
@@ -418,8 +425,7 @@ func _on_condition_toggled(enabled: bool, response_id: String, condition_edit: D
 
 
 func _on_field_changed(_value: String, response_id: String) -> void:
-	if _is_rebuilding:
-		return
+	if _is_rebuilding or _suppress_field_sync: return
 	_sync_row_from_fields(response_id)
 	call_deferred("_relayout_all_response_rows")
 	content_changed.emit()

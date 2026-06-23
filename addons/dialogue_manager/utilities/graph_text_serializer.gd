@@ -19,9 +19,12 @@ static func serialize(document: DMGraphDocument) -> String:
 			lines.append(preamble)
 
 	var content_nodes: Array[Dictionary] = []
+	var connected_ids: Dictionary = _get_connected_node_ids(document)
 	for id: String in document.nodes:
 		var node: Dictionary = document.nodes[id]
 		if node.get("is_spacer", false):
+			continue
+		if not connected_ids.has(id):
 			continue
 		content_nodes.append(node)
 
@@ -64,6 +67,14 @@ static func serialize(document: DMGraphDocument) -> String:
 		lines.append("#endregion")
 
 	return "\n".join(lines).strip_edges()
+
+
+static func _get_connected_node_ids(document: DMGraphDocument) -> Dictionary:
+	var connected: Dictionary = {}
+	for conn: Dictionary in document.connections:
+		connected[conn.get("from_node", "")] = true
+		connected[conn.get("to_node", "")] = true
+	return connected
 
 
 static func _node_to_line_text(node: Dictionary) -> String:

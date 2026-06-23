@@ -222,7 +222,7 @@ func _create_branch_row(row_data: Dictionary, branch_type: String, _index: int) 
 		return row
 
 	var expression: String = extract_expression(row_data, branch_type)
-	var expr_edit := DMGraphExpressionField.new()
+	var expr_edit: DMGraphExpressionField = DMGraphExpressionField.new()
 	expr_edit.name = "ExpressionEdit"
 	expr_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	expr_edit.set_line_type(DMConstants.TYPE_CONDITION)

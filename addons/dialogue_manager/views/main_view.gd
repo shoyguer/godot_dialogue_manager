@@ -492,7 +492,10 @@ func compile() -> void:
 
 	var text_to_compile: String = code_edit.text
 	if active_editor_tab == "graph":
-		text_to_compile = graph_view.serialize_to_text()
+		if graph_view.is_busy() and open_buffers.has(current_file_path):
+			text_to_compile = open_buffers[current_file_path].text
+		else:
+			text_to_compile = graph_view.serialize_to_text()
 
 	var result: DMCompilerResult = DMCompiler.compile_string(text_to_compile, current_file_path)
 	code_edit.errors = result.errors
@@ -646,7 +649,7 @@ func _on_graph_tab_button_pressed() -> void:
 
 
 func _on_graph_view_document_changed() -> void:
-	if current_file_path == "" or active_editor_tab != "graph":
+	if current_file_path == "" or active_editor_tab != "graph" or graph_view.is_busy():
 		return
 	var buffer: Dictionary = open_buffers[current_file_path]
 	var text: String = graph_view.serialize_to_text()

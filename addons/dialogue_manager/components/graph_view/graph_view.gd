@@ -57,7 +57,9 @@ var _mouse_press_undo_before: Dictionary = {}
 var _debounced_undo_before: Dictionary = {}
 var _undo_debounce_timer: Timer
 var _graph_context_menu: PopupMenu
+var _node_context_menu: PopupMenu
 var _context_menu_spawn_position: Vector2 = Vector2.ZERO
+var _context_menu_target_node: GraphNode
 var _delete_confirm_dialog: ConfirmationDialog
 var _pending_delete_nodes: Array[GraphNode] = []
 
@@ -136,7 +138,11 @@ func _ready() -> void:
 
 	_graph_context_menu = PopupMenu.new()
 	_graph_context_menu.id_pressed.connect(_on_graph_context_menu_id_pressed)
-	graph_edit.add_child(_graph_context_menu)
+	add_child(_graph_context_menu)
+
+	_node_context_menu = PopupMenu.new()
+	_node_context_menu.id_pressed.connect(_on_node_context_menu_id_pressed)
+	add_child(_node_context_menu)
 
 	_delete_confirm_dialog = ConfirmationDialog.new()
 	_delete_confirm_dialog.title = "Delete node"
@@ -146,6 +152,12 @@ func _ready() -> void:
 	add_child(_delete_confirm_dialog)
 
 	_apply_graph_edit_theme()
+	set_process(true)
+
+
+func _process(_delta: float) -> void:
+	if visible and is_instance_valid(graph_edit):
+		DMGraphNodeHeaderControls.update_all(graph_edit)
 
 
 func _on_visibility_changed() -> void:
@@ -441,11 +453,16 @@ func _refresh_goto_cue_options() -> void:
 
 
 func serialize_to_text() -> String:
-	_persist_active_cue_layout()
+	if not _is_updating:
+		_persist_active_cue_layout()
 	if _full_document != null:
 		return DMGraphTextSerializer.serialize(_full_document)
 	_sync_document_from_graph()
 	return DMGraphTextSerializer.serialize(document)
+
+
+func is_busy() -> bool:
+	return _is_updating
 
 
 func get_layout() -> Dictionary:
@@ -488,6 +505,8 @@ func clear_graph_ui() -> void:
 		if child is GraphNode:
 			nodes_to_remove.append(child)
 	for node: Node in nodes_to_remove:
+		if node is GraphNode:
+			DMGraphNodeHeaderControls.detach(node as GraphNode)
 		graph_edit.remove_child(node)
 		node.free()
 
@@ -781,6 +800,7 @@ func _on_delete_nodes_confirmed() -> void:
 ## Removes a visual node, its connections, and matching document entries.
 func _delete_visual_node(gn: GraphNode) -> void:
 	if not is_instance_valid(gn): return
+	DMGraphNodeHeaderControls.detach(gn)
 	var visual_name: String = gn.name
 	for conn: Dictionary in graph_edit.get_connection_list().duplicate():
 		if conn.from_node == visual_name or conn.to_node == visual_name:
@@ -1027,6 +1047,8 @@ func _node_has_input_port(gn: GraphNode, port: int) -> bool:
 
 
 func _sync_document_from_graph() -> void:
+	if _is_updating:
+		return
 	for id: String in _graph_nodes:
 		var gn: Node = _graph_nodes[id]
 		if gn is DMGraphResponseGroupNode:
@@ -1403,7 +1425,7 @@ func _on_auto_layout_pressed() -> void:
 
 
 func _persist_active_cue_layout() -> void:
-	if _active_cue_name == "":
+	if _active_cue_name == "" or _is_updating:
 		return
 	_sync_document_from_graph()
 	_all_layouts[_active_cue_name] = DMGraphLayout.extract_layout(document)
@@ -1640,16 +1662,33 @@ func _on_graph_gui_input(event: InputEvent) -> void:
 
 ## Opens the add node menu when right clicking empty graph canvas.
 func _on_graph_popup_request(at_position: Vector2) -> void:
-	if graph_edit.is_point_on_graph_node(at_position):
-		return
 	if graph_edit.is_point_on_connection(at_position):
 		return
+	var graph_node: GraphNode = graph_edit.get_graph_node_at_local_point(at_position)
+	if graph_node:
+		_show_node_context_menu(graph_node, at_position)
+		return
+	_show_add_node_context_menu(at_position)
+
+
+func _show_add_node_context_menu(at_position: Vector2) -> void:
 	_context_menu_spawn_position = graph_edit.local_point_to_graph_position(at_position)
 	DMGraphNodeIcons.populate_popup(_graph_context_menu, _can_add_node_type)
-	if _graph_context_menu.item_count == 0:
-		return
-	_graph_context_menu.position = graph_edit.get_global_mouse_position()
-	_graph_context_menu.popup()
+	if _graph_context_menu.item_count == 0: return
+	_popup_menu_at_graph_point(_graph_context_menu, at_position)
+
+
+func _show_node_context_menu(graph_node: GraphNode, at_position: Vector2) -> void:
+	_context_menu_target_node = graph_node
+	_node_context_menu.clear()
+	_node_context_menu.add_item("Delete", 0)
+	_popup_menu_at_graph_point(_node_context_menu, at_position)
+
+
+func _popup_menu_at_graph_point(menu: PopupMenu, _at_position: Vector2) -> void:
+	menu.reset_size()
+	menu.global_position = graph_edit.get_global_mouse_position()
+	menu.popup()
 
 
 func _refresh_palette_menu() -> void:
@@ -1661,6 +1700,12 @@ func _on_graph_context_menu_id_pressed(id: int) -> void:
 	var type: String = DMGraphNodeIcons.get_type_for_menu_id(_graph_context_menu, id)
 	if type == "": return
 	_on_node_type_selected(type, _context_menu_spawn_position)
+
+
+func _on_node_context_menu_id_pressed(id: int) -> void:
+	if id != 0 or not is_instance_valid(_context_menu_target_node): return
+	request_delete_nodes([_context_menu_target_node])
+	_context_menu_target_node = null
 
 
 func _check_selection() -> void:

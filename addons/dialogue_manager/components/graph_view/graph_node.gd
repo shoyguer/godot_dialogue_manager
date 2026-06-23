@@ -23,6 +23,8 @@ const TYPE_COLORS: Dictionary = {
 const MAX_DIALOGUE_TEXT_HEIGHT: float = 120.0
 const MIN_DIALOGUE_WIDTH: float = 240.0
 const MAX_MUTATION_WIDTH: float = 720.0
+const MUTATION_FIELD_HEIGHT: float = 32.0
+const MUTATION_ROW_SEPARATION: float = 10.0
 const MAX_RESPONSE_TEXT_WIDTH: float = 640.0
 const MAX_RESPONSE_TEXT_HEIGHT: float = 160.0
 const DEFAULT_DIALOGUE_TEXT_LINES: int = 2
@@ -38,6 +40,7 @@ var _pending_setup_data: Dictionary = {}
 var _text_popup: Window
 var _mutation_expand_button: Button
 var _is_layout_updating: bool = false
+var _suppress_field_signals: bool = false
 var has_errors: bool = false:
 	set(value):
 		has_errors = value
@@ -87,10 +90,12 @@ func _ensure_expression_code_field() -> void:
 		return
 	var host: Node = existing.get_parent()
 	var index: int = existing.get_index()
-	var field := DMGraphExpressionField.new()
+	var field: DMGraphExpressionField = DMGraphExpressionField.new()
 	field.name = "ExpressionEdit"
+	field.unique_name_in_owner = true
 	field.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	field.custom_minimum_size = existing.custom_minimum_size
+	var min_size: Vector2 = existing.custom_minimum_size
+	field.custom_minimum_size = Vector2(maxf(min_size.x, 120.0), maxf(min_size.y, 28.0))
 	field.visible = existing.visible
 	field.placeholder_text = existing.placeholder_text
 	host.add_child(field)
@@ -143,6 +148,7 @@ func set_available_cues(cue_names: Array[String]) -> void:
 
 
 func _apply_setup(data: Dictionary) -> void:
+	_suppress_field_signals = true
 	node_data = data
 	name = data.id
 	title = _get_title(data)
@@ -153,6 +159,26 @@ func _apply_setup(data: Dictionary) -> void:
 	_update_fields(data)
 	_apply_node_size_policy(data.type)
 	_update_error_style()
+	call_deferred("_end_field_setup")
+
+
+func _end_field_setup() -> void:
+	_apply_expression_field_from_data()
+	_suppress_field_signals = false
+
+
+func _apply_expression_field_from_data() -> void:
+	if not is_instance_valid(expression_edit) or not expression_edit.visible:
+		return
+	var node_type: String = node_data.get("type", "")
+	var value: String = ""
+	match node_type:
+		DMConstants.TYPE_MUTATION, DMConstants.TYPE_WHILE, DMConstants.TYPE_MATCH, DMConstants.TYPE_WHEN:
+			value = node_data.get("expression", node_data.get("text", ""))
+		DMConstants.TYPE_RESPONSE:
+			value = node_data.get("condition", "")
+	if value != "":
+		_set_expression_field_value(value)
 
 
 func _apply_node_size_policy(type: String) -> void:
@@ -403,6 +429,8 @@ func _show_expression_fields(data: Dictionary) -> void:
 
 
 func _show_mutation_fields(data: Dictionary) -> void:
+	if is_instance_valid(content_container):
+		content_container.add_theme_constant_override(&"separation", 8)
 	if is_instance_valid(header_label):
 		header_label.show()
 		header_label.text = "Mutation"
@@ -411,6 +439,7 @@ func _show_mutation_fields(data: Dictionary) -> void:
 		expression_edit.show()
 		var expr: String = data.get("expression", data.get("text", ""))
 		_set_expression_field_value(expr)
+		expression_edit.custom_minimum_size.y = MUTATION_FIELD_HEIGHT
 	if is_instance_valid(blocking_check):
 		blocking_check.show()
 		blocking_check.button_pressed = data.get("mutation_blocking", true)
@@ -579,7 +608,7 @@ func _update_mutation_layout() -> void:
 	var needs_expand: bool = natural_width > MAX_MUTATION_WIDTH + 4.0
 	var visible_width: float = mini(natural_width, MAX_MUTATION_WIDTH)
 
-	expression_edit.custom_minimum_size = Vector2(visible_width, expression_edit.custom_minimum_size.y)
+	expression_edit.custom_minimum_size = Vector2(visible_width, MUTATION_FIELD_HEIGHT)
 
 	if is_instance_valid(_mutation_expand_button):
 		_mutation_expand_button.visible = needs_expand
@@ -587,7 +616,7 @@ func _update_mutation_layout() -> void:
 	var height: float = 28.0
 	if is_instance_valid(header_label) and header_label.visible:
 		height += 24.0
-	height += 34.0
+	height += MUTATION_FIELD_HEIGHT + MUTATION_ROW_SEPARATION
 	if is_instance_valid(blocking_check) and blocking_check.visible:
 		height += 28.0
 	if needs_expand and is_instance_valid(_mutation_expand_button):
@@ -727,16 +756,12 @@ func _sync_data_from_fields() -> void:
 			node_data.text = "%s%s" % [prefix, target]
 
 		DMConstants.TYPE_MUTATION:
-			if is_instance_valid(expression_edit):
-				node_data.expression = expression_edit.text
-				node_data.text = expression_edit.text
+			_sync_expression_field_to_data()
 			if is_instance_valid(blocking_check):
 				node_data.mutation_blocking = blocking_check.button_pressed
 
 		DMConstants.TYPE_WHILE, DMConstants.TYPE_MATCH, DMConstants.TYPE_WHEN:
-			if is_instance_valid(expression_edit):
-				node_data.expression = expression_edit.text
-				node_data.text = expression_edit.text
+			_sync_expression_field_to_data()
 
 		DMConstants.TYPE_RANDOM:
 			if is_instance_valid(weight_spin):
@@ -748,7 +773,18 @@ func _sync_data_from_fields() -> void:
 		node_data.static_id = static_id_edit.text
 
 
+func _sync_expression_field_to_data() -> void:
+	if not is_instance_valid(expression_edit):
+		return
+	var field_text: String = expression_edit.text
+	if field_text == "" and node_data.get("expression", node_data.get("text", "")) != "":
+		return
+	node_data.expression = field_text
+	node_data.text = field_text
+
+
 func _on_content_changed(_arg: Variant = null) -> void:
+	if _suppress_field_signals: return
 	_sync_data_from_fields()
 	if node_data.get("type", "") == DMConstants.TYPE_MUTATION:
 		call_deferred("_update_mutation_layout")

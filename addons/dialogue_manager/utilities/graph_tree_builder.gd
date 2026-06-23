@@ -180,19 +180,19 @@ static func normalize_condition_text(raw: String) -> String:
 	var text: String = raw.strip_edges()
 	if text.is_empty(): return ""
 
-	var wrapped := RegEx.new()
+	var wrapped: RegEx = RegEx.new()
 	wrapped.compile("^\\[if\\s+(.+?)\\s*/\\]$")
 	var found: RegExMatch = wrapped.search(text)
 	if found:
 		return found.strings[1].strip_edges()
 
-	var bracketed := RegEx.new()
+	var bracketed: RegEx = RegEx.new()
 	bracketed.compile("^\\[if\\s+(.+?)\\]$")
 	found = bracketed.search(text)
 	if found:
 		return found.strings[1].strip_edges()
 
-	var embedded := RegEx.new()
+	var embedded: RegEx = RegEx.new()
 	embedded.compile("\\[if\\s+(.+?)\\]")
 	var last_match: RegExMatch = null
 	for match: RegExMatch in embedded.search_all(text):

@@ -44,6 +44,11 @@ func local_point_to_graph_position(local_point: Vector2) -> Vector2:
 
 ## Returns true when a local point lies inside any child GraphNode.
 func is_point_on_graph_node(local_point: Vector2) -> bool:
+	return get_graph_node_at_local_point(local_point) != null
+
+
+## Returns the GraphNode under a local GraphEdit point, if any.
+func get_graph_node_at_local_point(local_point: Vector2) -> GraphNode:
 	var graph_point: Vector2 = local_point_to_graph_position(local_point)
 	for child: Node in get_children():
 		if not child is GraphNode:
@@ -53,8 +58,8 @@ func is_point_on_graph_node(local_point: Vector2) -> bool:
 		if node_rect.size == Vector2.ZERO:
 			node_rect.size = graph_node.get_combined_minimum_size()
 		if node_rect.has_point(graph_point):
-			return true
-	return false
+			return graph_node
+	return null
 
 
 ## Returns true when a local point is near a connection line.

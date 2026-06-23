@@ -7,6 +7,9 @@ extends CodeEdit
 ## Emitted when the user edits the expression text.
 signal text_modified()
 
+
+var _pending_text: String = ""
+
 var expression_line_type: String = DMConstants.TYPE_CONDITION:
 	set(value):
 		expression_line_type = value
@@ -21,8 +24,6 @@ var theme_overrides: DMThemeValues:
 		if not theme_overrides:
 			theme_overrides = DMThemeValues.get_safe_editor_theme()
 		return theme_overrides
-
-var _suppress_change: bool = false
 
 
 func _ready() -> void:
@@ -42,6 +43,10 @@ func _ready() -> void:
 	text_changed.connect(_on_text_changed)
 	call_deferred("_apply_editor_theme")
 	DMGraphNodeTheme.apply_field_background(self)
+	if _pending_text != "":
+		var pending: String = _pending_text
+		_pending_text = ""
+		call_deferred("_apply_text_silent", pending)
 
 
 func set_line_type(type: String) -> void:
@@ -64,11 +69,19 @@ func _apply_editor_theme() -> void:
 
 
 func set_text_silent(value: String) -> void:
-	_suppress_change = true
+	if not is_node_ready():
+		_pending_text = value
+		return
+	_apply_text_silent(value)
+
+
+func _apply_text_silent(value: String) -> void:
+	if text_changed.is_connected(_on_text_changed):
+		text_changed.disconnect(_on_text_changed)
 	text = value
-	_suppress_change = false
+	if not text_changed.is_connected(_on_text_changed):
+		text_changed.connect(_on_text_changed)
 
 
 func _on_text_changed() -> void:
-	if _suppress_change: return
 	text_modified.emit()
