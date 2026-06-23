@@ -58,9 +58,7 @@ func _enter_tree() -> void:
 		preview_generator = DMPreviewGenerator.new()
 		EditorInterface.get_resource_previewer().add_preview_generator(preview_generator)
 
-		main_view = MainView.instantiate()
-		EditorInterface.get_editor_main_screen().add_child(main_view)
-		_make_visible(false)
+		call_deferred("_create_main_view")
 
 		_update_localization()
 
@@ -100,6 +98,14 @@ func _exit_tree() -> void:
 	remove_tool_menu_item("Dialogue")
 
 	instance = null
+
+
+func _create_main_view() -> void:
+	if is_instance_valid(main_view):
+		return
+	main_view = MainView.instantiate()
+	EditorInterface.get_editor_main_screen().add_child(main_view)
+	_make_visible(false)
 
 
 func _has_main_screen() -> bool:
@@ -385,10 +391,21 @@ func _update_localization() -> void:
 		ProjectSettings.save()
 
 
+func _get_editor_icon(icon_name: String) -> Texture2D:
+	var theme: Theme = EditorInterface.get_editor_theme()
+	if theme and theme.has_icon(icon_name, &"EditorIcons"):
+		return theme.get_icon(icon_name, &"EditorIcons")
+	return null
+
+
 func _create_translations_tool_menu_item() -> PopupMenu:
 	var tool_menu: PopupMenu = PopupMenu.new()
 	tool_menu.add_icon_item(_get_plugin_icon(), "Create balloon...")
-	tool_menu.add_icon_item(main_view.get_theme_icon("Translation", "EditorIcons"), DMConstants.translate("generate_line_ids"))
+	var translation_icon: Texture2D = _get_editor_icon("Translation")
+	if translation_icon:
+		tool_menu.add_icon_item(translation_icon, DMConstants.translate("generate_line_ids"))
+	else:
+		tool_menu.add_item(DMConstants.translate("generate_line_ids"))
 	tool_menu.index_pressed.connect(func(index: int) -> void:
 		match index:
 			0: # create balloon

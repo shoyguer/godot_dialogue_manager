@@ -81,6 +81,38 @@ static func get_values_from_editor() -> DMThemeValues:
 	})
 
 
+## Returns editor theme values when available, otherwise a fallback palette.
+static func get_safe_editor_theme() -> DMThemeValues:
+	if Engine.is_editor_hint() and Engine.has_singleton(&"EditorInterface"):
+		return get_values_from_editor()
+	return get_fallback_theme()
+
+
+## Returns default theme values for graph fields outside the editor.
+static func get_fallback_theme() -> DMThemeValues:
+	return DMThemeValues.new({
+		scale = 1.0,
+		background_color = Color(0.08, 0.08, 0.1),
+		current_line_color = Color(0.12, 0.12, 0.14),
+		error_line_color = Color(1.0, 0.3, 0.3, 0.4),
+		critical_color = Color(1.0, 0.3, 0.3),
+		notice_color = Color(0.5, 0.5, 0.5),
+		cues_color = Color(0.6, 0.8, 1.0),
+		text_color = Color(0.86, 0.86, 0.86),
+		tags_color = Color(0.7, 0.7, 0.7),
+		conditions_color = Color(1.0, 0.42, 0.42),
+		mutations_color = Color(1.0, 0.7, 0.45),
+		mutations_line_color = Color(1.0, 0.7, 0.45, 0.6),
+		members_color = Color(0.57, 0.82, 1.0),
+		strings_color = Color(1.0, 0.93, 0.63),
+		numbers_color = Color(0.63, 1.0, 0.88),
+		symbols_color = Color(0.67, 0.79, 1.0),
+		comments_color = Color(0.5, 0.5, 0.5),
+		jumps_color = Color(0.6, 0.8, 1.0, 0.6),
+		font_size = 14,
+	})
+
+
 ## Return a copy of a texture with a tint applied.
 static func get_icon_with_color(icon: Texture2D, color: Color) -> ImageTexture:
 	var image: Image = icon.get_image().duplicate()

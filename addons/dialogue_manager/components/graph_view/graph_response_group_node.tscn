@@ -1,0 +1,9 @@
+[gd_scene format=3 uid="uid://dyyldf4faoauq"]
+
+[ext_resource type="Script" path="res://addons/dialogue_manager/components/graph_view/graph_response_group_node.gd" id="1"]
+
+[node name="DMGraphResponseGroupNode" type="GraphNode"]
+custom_minimum_size = Vector2(300, 80)
+resizable = true
+title = "Responses"
+script = ExtResource("1")

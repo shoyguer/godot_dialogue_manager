@@ -60,7 +60,12 @@ signal confirmation_closed()
 @onready var files_popup_menu: PopupMenu = %FilesPopupMenu
 @onready var cue_list: Control = %CueList
 @onready var code_edit: DMCodeEdit = %CodeEdit
+@onready var graph_view: DMGraphView = %GraphView
 @onready var errors_panel: Control = %ErrorsPanel
+@onready var text_tab_button: Button = %TextTabButton
+@onready var graph_tab_button: Button = %GraphTabButton
+
+var active_editor_tab: String = "text"
 
 # The currently open file
 var current_file_path: String = "":
@@ -78,6 +83,7 @@ var current_file_path: String = "":
 			files_list.hide()
 			cue_list.hide()
 			code_edit.hide()
+			graph_view.hide()
 			errors_panel.hide()
 			search_and_replace.hide()
 			banner.show()
@@ -90,19 +96,10 @@ var current_file_path: String = "":
 			content.dragger_visibility = SplitContainer.DRAGGER_VISIBLE
 			files_list.show()
 			cue_list.show()
-			code_edit.show()
+			active_editor_tab = DMSettings.get_active_editor_tab(current_file_path)
+			_load_file_into_editors()
+			_apply_editor_tab()
 			banner.hide()
-
-			var cursor: Vector2 = DMSettings.get_caret(current_file_path)
-			var scroll_vertical: float = DMSettings.get_scroll(current_file_path)
-
-			code_edit.text = open_buffers[current_file_path].text
-			code_edit.clear_undo_history()
-			code_edit.set_cursor(cursor)
-			code_edit.scroll_vertical = scroll_vertical
-			code_edit.grab_focus()
-
-			_on_code_edit_text_changed()
 
 			errors_panel.errors = []
 			code_edit.errors = []
@@ -145,6 +142,10 @@ func _ready() -> void:
 	# Connect menu buttons
 	insert_button.get_popup().id_pressed.connect(_on_insert_button_menu_id_pressed)
 
+	text_tab_button.pressed.connect(_on_text_tab_button_pressed)
+	graph_tab_button.pressed.connect(_on_graph_tab_button_pressed)
+	graph_view.document_changed.connect(_on_graph_view_document_changed)
+
 	code_edit.main_view = self
 	var editor_settings: EditorSettings = EditorInterface.get_editor_settings()
 	editor_settings.settings_changed.connect(_on_editor_settings_changed)
@@ -153,13 +154,9 @@ func _ready() -> void:
 	ProjectSettings.settings_changed.connect(_on_project_settings_changed)
 	_on_project_settings_changed()
 
-	# Reopen any files that were open when Godot was closed
+	# Reopen any files that were open when Godot was closed (deferred so plugin init can finish).
 	if editor_settings.get_setting("text_editor/behavior/files/restore_scripts_on_load"):
-		var reopen_files: Array = DMSettings.get_user_value("reopen_files", [])
-		for reopen_file: String in reopen_files:
-			open_file(reopen_file)
-
-		self.current_file_path = DMSettings.get_user_value("most_recent_reopen_file", "")
+		call_deferred("_restore_reopen_files")
 
 	save_all_button.disabled = true
 
@@ -185,6 +182,20 @@ func _unhandled_input(event: InputEvent) -> void:
 	if not visible: return
 
 	if event is InputEventKey and event.is_pressed():
+		if active_editor_tab == "graph" and graph_view.visible:
+			if event.keycode == KEY_Z and event.ctrl_or_cmd_pressed() and not event.shift_pressed:
+				get_viewport().set_input_as_handled()
+				graph_view.undo()
+				return
+			if event.ctrl_or_cmd_pressed() and (event.keycode == KEY_Y or (event.keycode == KEY_Z and event.shift_pressed)):
+				get_viewport().set_input_as_handled()
+				graph_view.redo()
+				return
+			if (event.keycode == KEY_DELETE or event.keycode == KEY_BACKSPACE) and not event.ctrl_or_cmd_pressed():
+				if not graph_view.is_editing_text():
+					get_viewport().set_input_as_handled()
+					graph_view.request_delete_selected_nodes()
+					return
 		var shortcut: String = DMPlugin.get_editor_shortcut(event)
 		match shortcut:
 			"close_file":
@@ -215,6 +226,13 @@ func count_unsaved_files() -> int:
 
 
 # Load back to the previous buffer regardless of if it was actually saved
+func _restore_reopen_files() -> void:
+	var reopen_files: Array = DMSettings.get_user_value("reopen_files", [])
+	for reopen_file: String in reopen_files:
+		open_file(reopen_file)
+	self.current_file_path = DMSettings.get_user_value("most_recent_reopen_file", "")
+
+
 func load_from_version_refresh(just_refreshed: Dictionary) -> void:
 	if just_refreshed.has("current_file_content"):
 		# We just loaded from a version before multiple buffers
@@ -303,6 +321,10 @@ func save_files() -> void:
 # Save a file
 func save_file(path: String, rescan_file_system: bool = true) -> void:
 	var buffer: Dictionary = open_buffers[path]
+
+	if path == current_file_path and active_editor_tab == "graph":
+		_sync_graph_to_text()
+		buffer = open_buffers[path]
 
 	files_list.mark_file_as_unsaved(path, false)
 	save_all_button.disabled = files_list.unsaved_files.size() == 0
@@ -426,8 +448,11 @@ func apply_theme() -> void:
 
 # Move the cursor to a given cue in the dialogue editor
 func go_to_cue(cue: String, create_if_none: bool = false) -> void:
-	code_edit.go_to_cue(cue, create_if_none)
-	code_edit.grab_focus()
+	if active_editor_tab == "graph":
+		graph_view.focus_cue(cue.strip_edges())
+	else:
+		code_edit.go_to_cue(cue, create_if_none)
+		code_edit.grab_focus()
 
 
 # Move the cursor to a given line number.
@@ -465,10 +490,15 @@ func compile() -> void:
 	# Skip if nothing to parse
 	if current_file_path == "": return
 
-	var result: DMCompilerResult = DMCompiler.compile_string(code_edit.text, current_file_path)
+	var text_to_compile: String = code_edit.text
+	if active_editor_tab == "graph":
+		text_to_compile = graph_view.serialize_to_text()
+
+	var result: DMCompilerResult = DMCompiler.compile_string(text_to_compile, current_file_path)
 	code_edit.errors = result.errors
 	errors_panel.errors = result.errors
-	cue_list.cues = code_edit.get_cues(true)
+	graph_view.apply_errors(result.errors)
+	cue_list.cues = _get_cues_from_text(text_to_compile)
 
 
 func show_build_error_dialog() -> void:
@@ -488,9 +518,142 @@ func show_search_form(is_enabled: bool) -> void:
 	if code_edit.last_selected_text:
 		search_and_replace.input.text = code_edit.last_selected_text
 
-	search_and_replace.visible = is_enabled
-	search_button.set_pressed_no_signal(is_enabled)
-	search_and_replace.focus_line_edit()
+	search_and_replace.visible = is_enabled and active_editor_tab == "text"
+	search_button.set_pressed_no_signal(is_enabled and active_editor_tab == "text")
+	if active_editor_tab == "text":
+		search_and_replace.focus_line_edit()
+
+
+func _get_cues_from_text(text: String) -> PackedStringArray:
+	var cues: PackedStringArray = PackedStringArray([])
+	for line: String in text.split("\n"):
+		var stripped: String = line.strip_edges()
+		if stripped.begins_with("~ "):
+			cues.append(stripped.substr(2))
+		elif stripped.begins_with("#region "):
+			cues.append("#" + stripped.replace("#region ", ""))
+	return cues
+
+
+func _load_file_into_editors() -> void:
+	if current_file_path == "" or not open_buffers.has(current_file_path):
+		return
+
+	var buffer: Dictionary = open_buffers[current_file_path]
+	var cursor: Vector2 = DMSettings.get_caret(current_file_path)
+	var scroll_vertical: float = DMSettings.get_scroll(current_file_path)
+
+	code_edit.text = buffer.text
+	code_edit.clear_undo_history()
+	code_edit.set_cursor(cursor)
+	code_edit.scroll_vertical = scroll_vertical
+
+	_on_code_edit_text_changed()
+
+
+func _apply_editor_tab() -> void:
+	var is_text: bool = active_editor_tab == "text"
+	code_edit.visible = is_text
+	graph_view.visible = not is_text
+	text_tab_button.set_pressed_no_signal(is_text)
+	graph_tab_button.set_pressed_no_signal(not is_text)
+
+	insert_button.visible = is_text
+	search_button.visible = is_text
+	search_and_replace.visible = is_text and search_button.button_pressed
+
+	if current_file_path != "":
+		DMSettings.set_active_editor_tab(current_file_path, active_editor_tab)
+
+	if not is_text:
+		_load_graph_from_text()
+	else:
+		var buffer: Dictionary = open_buffers[current_file_path]
+		code_edit.text = buffer.text
+		code_edit.grab_focus()
+		compile()
+
+
+func _load_graph_from_text() -> void:
+	if current_file_path == "":
+		return
+	call_deferred("_deferred_load_graph_from_text")
+
+
+func _deferred_load_graph_from_text() -> void:
+	if current_file_path == "" or not open_buffers.has(current_file_path):
+		return
+	var buffer: Dictionary = open_buffers[current_file_path]
+	graph_view.load_from_text(
+		buffer.text,
+		current_file_path,
+		DMSettings.get_graph_layout(current_file_path),
+		DMSettings.get_graph_active_cue(current_file_path)
+	)
+	compile()
+
+
+func _sync_graph_to_text() -> void:
+	if current_file_path == "" or not open_buffers.has(current_file_path):
+		return
+	var layout: Dictionary = graph_view.get_layout()
+	DMSettings.set_graph_layout(current_file_path, layout)
+	var text: String = graph_view.serialize_to_text()
+	var buffer: Dictionary = open_buffers[current_file_path]
+	buffer.text = text
+	open_buffers[current_file_path] = buffer
+	code_edit.text = text
+
+
+func _sync_text_to_graph() -> void:
+	if current_file_path == "" or not open_buffers.has(current_file_path):
+		return
+	var buffer: Dictionary = open_buffers[current_file_path]
+	buffer.text = code_edit.text
+	open_buffers[current_file_path] = buffer
+	DMSettings.set_graph_layout(current_file_path, graph_view.get_layout())
+	graph_view.load_from_text(
+		code_edit.text,
+		current_file_path,
+		DMSettings.get_graph_layout(current_file_path),
+		DMSettings.get_graph_active_cue(current_file_path)
+	)
+
+
+func _on_text_tab_button_pressed() -> void:
+	if active_editor_tab == "text":
+		text_tab_button.set_pressed_no_signal(true)
+		return
+	_sync_graph_to_text()
+	active_editor_tab = "text"
+	_apply_editor_tab()
+
+
+func _on_graph_tab_button_pressed() -> void:
+	if active_editor_tab == "graph":
+		graph_tab_button.set_pressed_no_signal(true)
+		return
+	if current_file_path == "" or not open_buffers.has(current_file_path):
+		active_editor_tab = "graph"
+		_apply_editor_tab()
+		return
+	var buffer: Dictionary = open_buffers[current_file_path]
+	buffer.text = code_edit.text
+	open_buffers[current_file_path] = buffer
+	DMSettings.set_graph_layout(current_file_path, graph_view.get_layout())
+	active_editor_tab = "graph"
+	_apply_editor_tab()
+
+
+func _on_graph_view_document_changed() -> void:
+	if current_file_path == "" or active_editor_tab != "graph":
+		return
+	var buffer: Dictionary = open_buffers[current_file_path]
+	var text: String = graph_view.serialize_to_text()
+	buffer.text = text
+	files_list.mark_file_as_unsaved(current_file_path, buffer.text != buffer.pristine_text)
+	save_all_button.disabled = open_buffers.values().filter(func(d: Dictionary) -> bool: return d.text != d.pristine_text).size() == 0
+	parse_timer.start(1)
 
 
 func run_test_scene(from_key: String) -> void:
@@ -593,8 +756,9 @@ func _on_main_view_theme_changed() -> void:
 
 
 func _on_main_view_visibility_changed() -> void:
-	if visible and is_instance_valid(code_edit):
-		code_edit.grab_focus()
+	if visible:
+		if active_editor_tab == "text" and is_instance_valid(code_edit):
+			code_edit.grab_focus()
 
 
 func _on_new_button_pressed() -> void:
@@ -720,6 +884,25 @@ func _on_test_line_button_pressed() -> void:
 	if errors_panel.errors.size() > 0:
 		errors_dialog.popup_centered()
 		return
+
+	if active_editor_tab == "graph":
+		var selected: Array[GraphNode] = graph_view.get_selected_graph_nodes()
+		if selected.size() == 1:
+			var gn: GraphNode = selected[0]
+			if gn is DMGraphCompactNode:
+				var compact: DMGraphCompactNode = gn as DMGraphCompactNode
+				if compact.node_data.type == DMConstants.TYPE_CUE:
+					run_test_scene(compact.node_data.get("cue_name", ""))
+					return
+			elif gn is DMGraphNode:
+				var node: DMGraphNode = gn as DMGraphNode
+				if node.node_data.type == DMConstants.TYPE_CUE:
+					run_test_scene(node.node_data.get("cue_name", ""))
+					return
+				var line_num: int = node.node_data.get("line_number", 0)
+				if line_num > 0:
+					run_test_scene(str(line_num - 1))
+					return
 
 	# Find next non-empty line
 	var line_to_run: int = 0

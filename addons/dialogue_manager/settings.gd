@@ -259,6 +259,47 @@ static func get_scroll(path: String) -> float:
 		return 0
 
 
+static func set_graph_layout(path: String, layouts: Dictionary) -> void:
+	var file_meta: Dictionary = get_user_value("file_meta", {})
+	file_meta[path] = file_meta.get(path, {}).merged({ graph_layouts = layouts }, true)
+	set_user_value("file_meta", file_meta)
+
+
+static func get_graph_layout(path: String) -> Dictionary:
+	var file_meta: Dictionary = get_user_value("file_meta", {})
+	if file_meta.has(path):
+		if file_meta.get(path).has("graph_layouts"):
+			return file_meta.get(path).get("graph_layouts", {})
+		return file_meta.get(path).get("graph_layout", {})
+	return {}
+
+
+static func set_graph_active_cue(path: String, cue_name: String) -> void:
+	var file_meta: Dictionary = get_user_value("file_meta", {})
+	file_meta[path] = file_meta.get(path, {}).merged({ graph_active_cue = cue_name }, true)
+	set_user_value("file_meta", file_meta)
+
+
+static func get_graph_active_cue(path: String) -> String:
+	var file_meta: Dictionary = get_user_value("file_meta", {})
+	if file_meta.has(path):
+		return file_meta.get(path).get("graph_active_cue", "")
+	return ""
+
+
+static func set_active_editor_tab(path: String, tab: String) -> void:
+	var file_meta: Dictionary = get_user_value("file_meta", {})
+	file_meta[path] = file_meta.get(path, {}).merged({ active_tab = tab }, true)
+	set_user_value("file_meta", file_meta)
+
+
+static func get_active_editor_tab(path: String) -> String:
+	var file_meta: Dictionary = get_user_value("file_meta", {})
+	if file_meta.has(path):
+		return file_meta.get(path).get("active_tab", "text")
+	return "text"
+
+
 static func check_for_dotnet_solution() -> bool:
 	if Engine.is_editor_hint():
 		var has_dotnet_solution: bool = false

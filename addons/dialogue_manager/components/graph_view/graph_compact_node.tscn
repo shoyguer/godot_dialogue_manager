@@ -1,0 +1,25 @@
+[gd_scene load_steps=2 format=3 uid="uid://bq04eaf1w1l4s"]
+
+[ext_resource type="Script" path="res://addons/dialogue_manager/components/graph_view/graph_compact_node.gd" id="1"]
+
+[node name="DMGraphCompactNode" type="GraphNode"]
+custom_minimum_size = Vector2(120, 40)
+resizable = false
+title = ""
+clip_contents = false
+script = ExtResource("1")
+
+[node name="Row" type="PanelContainer" parent="."]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+custom_minimum_size = Vector2(120, 40)
+
+[node name="TitleLabel" type="Label" parent="Row"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+text = "Cue"
+horizontal_alignment = 1
+vertical_alignment = 1

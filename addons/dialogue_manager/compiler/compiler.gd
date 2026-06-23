@@ -55,3 +55,42 @@ static func get_cues_in_text(text: String, path: String) -> Dictionary:
 	compilation.find_imported_cues(text, path)
 	compilation.build_line_tree(text.split("\n"))
 	return compilation.cues
+
+
+## Build a parse tree from dialogue text without fully compiling it.
+## Used by the graph editor to convert text to a visual representation.
+static func build_tree(text: String, path: String = ".") -> DMTreeLine:
+	var compilation: DMCompilation = DMCompilation.new()
+	compilation.file_path = path
+	compilation.find_imported_cues(text, path)
+	return compilation.build_line_tree(text.split("\n"))
+
+
+## Build a parse tree and return preamble metadata (imports, using clauses).
+static func build_tree_with_metadata(text: String, path: String = ".") -> Dictionary:
+	var compilation: DMCompilation = DMCompilation.new()
+	compilation.file_path = path
+	compilation.find_imported_cues(text, path)
+	var root: DMTreeLine = compilation.build_line_tree(text.split("\n"))
+	var imports: PackedStringArray = []
+	for i: int in range(0, text.split("\n").size()):
+		var line: String = text.split("\n")[i].strip_edges()
+		if compilation.is_import_line(line):
+			imports.append(line)
+	return {
+		root = root,
+		imports = imports,
+		using_states = compilation.using_states,
+		cues = compilation.cues,
+		errors = compilation.errors,
+	}
+
+
+## Return live [DMCompiledLine] objects for graph flow wiring (not [code]to_data()[/code] dictionaries).
+static func get_compiled_lines(text: String, path: String = ".") -> Dictionary:
+	var compilation: DMCompilation = DMCompilation.new()
+	compilation.file_path = path
+	var compile_text: String = text + "\n=> END"
+	compilation.find_imported_cues(compile_text, path)
+	compilation.parse_line_tree(compilation.build_line_tree(compile_text.split("\n")))
+	return compilation.lines

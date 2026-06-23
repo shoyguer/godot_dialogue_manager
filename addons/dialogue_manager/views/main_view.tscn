@@ -9,6 +9,7 @@
 [ext_resource type="PackedScene" uid="uid://cs8pwrxr5vxix" path="res://addons/dialogue_manager/components/errors_panel.tscn" id="7_5cvl4"]
 [ext_resource type="Script" uid="uid://klpiq4tk3t7a" path="res://addons/dialogue_manager/components/code_edit_syntax_highlighter.gd" id="7_necsa"]
 [ext_resource type="Texture2D" uid="uid://cnm67htuohhlo" path="res://addons/dialogue_manager/assets/banner.png" id="9_y6rqu"]
+[ext_resource type="PackedScene" uid="uid://dmgraphview001" path="res://addons/dialogue_manager/components/graph_view/graph_view.tscn" id="10_graph"]
 
 [sub_resource type="Image" id="Image_faxki"]
 data = {
@@ -200,6 +201,22 @@ popup/item_14/text = "End dialogue"
 popup/item_14/icon = SubResource("ImageTexture_57eek")
 popup/item_14/id = 12
 
+[node name="EditorTabBar" type="HBoxContainer" parent="Margin/Content/CodePanel/Toolbar"]
+layout_mode = 2
+
+[node name="TextTabButton" type="Button" parent="Margin/Content/CodePanel/Toolbar/EditorTabBar"]
+unique_name_in_owner = true
+layout_mode = 2
+toggle_mode = true
+button_pressed = true
+text = "Text"
+
+[node name="GraphTabButton" type="Button" parent="Margin/Content/CodePanel/Toolbar/EditorTabBar"]
+unique_name_in_owner = true
+layout_mode = 2
+toggle_mode = true
+text = "Graph"
+
 [node name="SearchButton" type="Button" parent="Margin/Content/CodePanel/Toolbar" unique_id=121689358]
 unique_name_in_owner = true
 layout_mode = 2
@@ -291,6 +308,13 @@ Coco: Meow.
 => END"
 scroll_smooth = true
 syntax_highlighter = SubResource("SyntaxHighlighter_mpdoc")
+
+[node name="GraphView" parent="Margin/Content/CodePanel" instance=ExtResource("10_graph")]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
 
 [node name="ErrorsPanel" parent="Margin/Content/CodePanel" unique_id=1975824789 instance=ExtResource("7_5cvl4")]
 unique_name_in_owner = true

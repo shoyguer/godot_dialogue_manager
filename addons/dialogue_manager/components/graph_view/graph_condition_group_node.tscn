@@ -1,0 +1,9 @@
+[gd_scene format=3 uid="uid://bd2sqprwipdwy"]
+
+[ext_resource type="Script" path="res://addons/dialogue_manager/components/graph_view/graph_condition_group_node.gd" id="1"]
+
+[node name="DMGraphConditionGroupNode" type="GraphNode"]
+custom_minimum_size = Vector2(300, 80)
+resizable = true
+title = "Condition"
+script = ExtResource("1")

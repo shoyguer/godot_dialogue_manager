@@ -1,0 +1,225 @@
+~ start
+
+Narrator: The alien girl comes to me. I stand in complete shock. Wide eyed, mouth gaped.
+Girl: Hello, human.
+Girl: please, don't be scared...
+Girl: I am ɲoɨmu. I came to earth because I'm fleeing from my planet.
+Narrator: It seems like... is she introducing herself?
+- Hello, I'm {{Global.player_name}}
+	% {{Global.player_name}}: Hello... I'm {{Global.player_name}}. Sorry, I don't understand anything you are saying.
+	% {{Global.player_name}}: Hm, Hi... I guess? My name is {{Global.player_name}}.
+	set Girl.knows_player_name = true
+- I'm lost for words
+	% {{Global.player_name}}: ... Wait... what... what are you?
+	% {{Global.player_name}}: I... don't know what to say...
+
+if Global.girl.knows_player_name == true:
+	Girl: {{Global.player_name}}... help me?
+	Narrator: She said my name. Then she points to her ship and then to her injury. Her ship must have crashed.
+else:
+	Girl: Please, human... help.
+	Narrator: She's desperate. I can see it in her eyes, the way she gestures toward the distant fire and to her injury. Her ship must have crashed.
+
+Narrator: The girl seems to be in distress. It looks like she is seeking help.
+
+- You're actually an alien?
+	{{Global.player_name}}: Wait, you're... you're an actual alien? This is insane. I mean, I guess I should help you or something.
+	=> impressed
+
+- I need to get out of here
+	{{Global.player_name}}: Nope. Nope, nope, nope.
+	{{Global.player_name}}: That explosion back there... I'm not sticking around to see what happens next.
+	=> terrified
+
+- I can't understand you
+	{{Global.player_name}}: Okay, slow down. I don't understand what you're saying. Gosh... what is happening here!?
+	=> confused
+
+- What was that explosion?
+	{{Global.player_name}}: That explosion. Was that your ship or something? Did you arrive here on it?
+	=> curious
+
+- Who or what are you?
+	{{Global.player_name}}: Look, I don't know who or what you are. I just heard an explosion and now... you... are here.
+	{{Global.player_name}}: What do you want from me?
+	=> cautious
+
+~ impressed
+Girl: I sense your... openness. Thank you.
+Narrator: She places her hand over her chest and bows slightly. Her antennae twitch, reading his emotions.
+{{Global.player_name}}: You... you're really not from here, are you? Those things on your head... are those antennae?
+Narrator: She nods and points to her antennae, then places a hand over her chest. She's trying to tell me something about feelings, I think.
+{{Global.player_name}}: I don't know what you're saying, but... okay. You seem like you need help.
+Narrator: He takes a cautious step closer, looking past her toward the flames in the distance, still bright, even in the rain.
+Narrator: She gestures toward the burning wreckage, then back at herself helplessly.
+{{Global.player_name}}: You're hurt. I can see that much. Look, I still don't understand you, but you need help.
+Girl: I fled from my home. From tyranny. The crash... it was harsh, but I survived.
+Narrator: Her antennae droop slightly as she touches her side, wincing.
+{{Global.player_name}}: Alright. Come with me. Let's get you out of this rain and somewhere warm.
+Narrator: He gestures toward his house in the distance, making walking motions with his fingers.
+
+if Global.girl.knows_player_name == true:
+	Girl: {{Global.player_name}}... Thank you...
+
+else:
+	Girl: Thank you... human.
+=> END
+
+~ terrified
+Narrator: Your heart races. This is beyond anything he could have imagined.
+{{Global.player_name}}: No. No way. This isn't real. This CAN NOT be real!
+Girl: I feel fear radiating like heat. Not be afraid.
+Narrator: She takes a small step forward, hands raised in a gesture of peace. Her antennae flatten against her head. She seems just as scared as I am.
+{{Global.player_name}}: Stay back! Just... just stay there. Don't come any closer!
+Girl: I mean you no harm. I am fleeing from danger. Please understand.
+Narrator: Her voice trembles, and despite his fear, he notices she seems just as scared as he is.
+{{Global.player_name}}: You... you could be dangerous. How do I know you're not here to... to do something to me?
+Narrator: She touches her wounded side, grimacing. Whatever she's saying sounds like a plea.
+{{Global.player_name}}: This is insane. This whole situation is completely insane.
+
+- [i]Run away now[/i]
+	{{Global.player_name}}: I can't do this. I'm sorry, but I can't. I'm leaving. Right now.
+	Narrator: You turn and start backing away quickly, eyes still locked on her.
+	Girl: Sorry I frightened you...
+	Narrator: Her antennae droop in defeat as she watches him retreat into the darkness. She says something soft, almost like a farewell.
+	{{Global.player_name}}: I'm sorry. I just... I can't.
+
+- Maybe I can help you
+	{{Global.player_name}}: Wait... wait. You're hurt. And you're scared too, aren't you?
+	{{Global.player_name}}: Okay. Okay, I'll... I'll help. But you stay where I can see you. No sudden moves.
+	Narrator: He gestures cautiously toward his house, still maintaining distance.
+	Girl: You help me? I follow your lead. Thanks!
+
+- I need to think...
+	{{Global.player_name}}: Just... give me a second to think. This is a lot to process.
+	Narrator: You seem terrified. Take time.
+	Narrator: You back away... you need some time to think.
+=> END
+
+~ confused
+Narrator: You stare at her, completely at a loss.
+{{Global.player_name}}: I have no idea what you're saying. I don't speak... alien?...
+Narrator: She tilts her head, clearly confused too. Neither of us understand each other.
+{{Global.player_name}}: And you don't understand me either, I guess. Great. Just perfect.
+Narrator: She winces, touching her injured side. Blood seeps through her fingers.
+{{Global.player_name}}: You're bleeding. That much I can see.
+Narrator: She follows my gaze to her wound and nods slowly. At least we can communicate that much.
+Narrator: The girl seems to be waiting you to make a decision.
+=> confused_options
+
+~ confused_options
+- I think I should call for help. [if not local.confused_should_call_help]
+	set local.confused_should_call_help = true
+	{{Global.player_name}}: I need to call someone. The police, or... I don't know, maybe a doctor?
+	{{Global.player_name}}: I think I should take you to the hospital or something.
+	Girl: Wish to bring others?
+	Narrator: She seems alarmed.
+	Narrator: Indeed, I don't think it would be a good idea to involve more people.
+	Narrator: Who knows what they'll do to her...
+	{{Global.player_name}}: Yeah, that doesn't seem like a good idea...
+	=> confused_options
+
+- Sorry, I can't do this...
+	{{Global.player_name}}: This is too much. I can't deal with this right now.
+	Narrator: You back away slowly, shaking your head.
+	Girl: I understand, human. I didn't mean to frighten you...
+	Narrator: She stands alone in the rain, watching you go.
+
+- [i]Bring her home[/i]
+	{{Global.player_name}}: Okay. I don't know what's happening, but you need help. Come on.
+	Girl: Thank you, human.
+	Narrator: She seems to be thanking me.
+=> END
+
+~ curious
+{{Global.player_name}}: That explosion. Was that your ship or something? Did you arrive here on it?
+Girl: The flames. Yes, my ship, it exploded.
+Narrator: She points to the distant glow, then touches her side. She's definitely hurt.
+{{Global.player_name}}: I wish I could understand you. But I saw the crash. That looked... brutal.
+Narrator: Her antennae move slightly, and there's something in her eyes. Relief, maybe? Or gratitude?
+{{Global.player_name}}: You came all this way just to crash here. That must've been terrifying.
+{{Global.player_name}}: You're running from something, aren't you?
+Girl: I sense you understand, even without words.
+Narrator: "pɛθov"...? That word sounded heavy coming from her, I think that might be something important.
+=> curious_options
+
+~ curious_options
+- Why did you come to Earth? [if not local.curious_asked_why_earth]
+	set local.curious_asked_why_earth = true
+
+	{{Global.player_name}}: Earth, though... why here? We're not exactly advanced or anything special.
+	Girl: I sense your confusion.
+	Narrator: She's responding to how I feel, not what I said. Those antennae are reading me somehow.
+	{{Global.player_name}}: Whatever brought you here, it must've been important. Worth risking everything for.
+	Narrator: There's real pain in her eyes now. She seems to be remembering something...
+	=> curious_options
+
+- You're alone out here [if not local.curious_asked_alone]
+	set local.curious_asked_alone = true
+
+	{{Global.player_name}}: Are you alone? Did anyone come with you?
+	Narrator: She's shaking her head slowly and glancing around. I think she's alone. No wonder she seems so desperate.
+	{{Global.player_name}}: That must've taken real courage. Or desperation. Maybe both.
+	Narrator: Her antennae droop slightly. Yeah, she's definitely alone. That must be terrifying.
+	=> curious_options
+
+- [i]Lead her home[/i]
+	Narrator: I gesture toward my house, making a roof shape with my hands.
+	Girl: Shelter... thank you.
+	{{Global.player_name}}: Let's get you inside and figure this out. One step at a time.
+	Narrator: We start walking back through the rain. This night just became a lot more complicated.
+	=> END
+
+~ cautious
+Narrator: I look at her more carefully. The way she stands, the way her antennae move—everything about her is foreign. Alien. Unknown.
+{{Global.player_name}}: Okay, okay... just... where did you come from? What are you?
+{{Global.player_name}}: And more importantly, what do you want?
+Narrator: My voice sounds steady, but my heart is racing. She's clearly hurt, but I have no idea what she's capable of.
+Girl: You cautious. I sense your uncertainty.
+Girl: I want just refuge. Not be alone...
+Narrator: There's something in the way she speaks. Almost... desperate.
+=> cautious_options
+
+~ cautious_options
+- What happened to your ship? [if not local.cautious_asked_ship_happened]
+	set local.cautious_asked_ship_happened = true
+
+	{{Global.player_name}}: Your ship... what happened to it? Did it really just crash?
+	{{Global.player_name}}: Or is this some kind of trap?
+	Narrator: You point at the ship in flames.
+	Narrator: She looks toward the flames in the distance, and for a moment, she doesn't seem like an alien. She just looks tired.
+	Narrator: She touches her side again, and I can see the blood. That's real. Whatever this is, the injury is real.
+	=> cautious_options
+
+- I can see you're hurt [if not local.cautious_asked_hurt]
+	set local.cautious_asked_hurt = true
+
+	{{Global.player_name}}: I don't know what you're saying, but I can see you're bleeding. That much is clear.
+	{{Global.player_name}}: You're hurt. And alone. I get that part at least.
+	Narrator: She meets my eyes, and there's a strange vulnerability in her expression.
+	Narrator: Her antennae relax slightly, as if she's trying to show me she's not a threat.
+	=> cautious_options
+
+- I need to think about this
+	{{Global.player_name}}: This is... a lot. I need time to think. I'm sorry, but I can't just make a decision right now.
+	Narrator: I back away a few steps, keeping my eyes on her.
+	Girl: I understand cautious.
+	Narrator: She nods slowly, and settles down on her heels, watching me retreat.
+	=> END
+
+- I can't help you. I'm sorry
+	{{Global.player_name}}: I want to help you, I really do. But this is too much for me. I can't deal with this.
+	{{Global.player_name}}: I'm sorry.
+	Narrator: I turn away, my chest tight with guilt.
+	Girl: You choose to leave. Survival comes first.
+	Narrator: As I walk back toward my house, I can still feel her eyes on me.
+	=> END
+
+- [i]Come with me[/i]
+	{{Global.player_name}}: Okay. I don't understand any of this, but you're hurt and you're scared. I get that much.
+	{{Global.player_name}}: Let's get you inside. We'll figure it out from there.
+	Girl: You help me?
+	Narrator: She stands up slowly, wincing from the pain in her side.
+	Girl: Thank you. I will not forget.
+	Narrator: We start walking back toward my house. The night ahead is uncertain, but at least she won't be alone.
+	=> END

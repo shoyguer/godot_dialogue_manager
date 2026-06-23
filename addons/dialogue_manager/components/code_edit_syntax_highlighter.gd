@@ -27,7 +27,7 @@ func _get_line_syntax_highlighting(line: int) -> Dictionary:
 	if text in cache:
 		return cache[text]
 
-	var theme: DMThemeValues = text_edit.theme_overrides
+	var theme: DMThemeValues = _get_highlight_theme()
 
 	var index: int = 0
 
@@ -174,7 +174,7 @@ func _get_line_syntax_highlighting(line: int) -> Dictionary:
 
 
 func _highlight_expression(tokens: Array, colors: Dictionary, index: int) -> int:
-	var theme: DMThemeValues = get_text_edit().theme_overrides
+	var theme: DMThemeValues = _get_highlight_theme()
 	var last_index: int = index
 	for token: Dictionary in tokens:
 		last_index = token.i
@@ -238,7 +238,7 @@ func _highlight_expression(tokens: Array, colors: Dictionary, index: int) -> int
 
 
 func _highlight_goto(text: String, colors: Dictionary, index: int) -> int:
-	var theme: DMThemeValues = get_text_edit().theme_overrides
+	var theme: DMThemeValues = _get_highlight_theme()
 	var goto_data: DMResolvedGotoData = DMResolvedGotoData.new(text, {})
 	colors[goto_data.index] = { color = theme.jumps_color }
 	if "{{" in text:
@@ -252,3 +252,15 @@ func _highlight_goto(text: String, colors: Dictionary, index: int) -> int:
 		colors[index] = { color = theme.jumps_color }
 
 	return index
+
+
+## Resolves theme values from the host text edit or editor settings.
+func _get_highlight_theme() -> DMThemeValues:
+	var text_edit: TextEdit = get_text_edit()
+	if is_instance_valid(text_edit):
+		var overrides: Variant = text_edit.get(&"theme_overrides")
+		if overrides is DMThemeValues:
+			return overrides
+	if Engine.is_editor_hint() and Engine.has_singleton(&"EditorInterface"):
+		return DMThemeValues.get_values_from_editor()
+	return DMThemeValues.get_fallback_theme()
