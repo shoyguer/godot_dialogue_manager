@@ -21,7 +21,8 @@ const TYPE_COLORS: Dictionary = {
 }
 
 const MAX_DIALOGUE_TEXT_HEIGHT: float = 120.0
-const MIN_DIALOGUE_WIDTH: float = 240.0
+const MIN_DIALOGUE_WIDTH: float = 180.0
+const DISPLAY_MAX_LINES: int = 3
 const MAX_MUTATION_WIDTH: float = 720.0
 const MUTATION_FIELD_HEIGHT: float = 32.0
 const MUTATION_ROW_SEPARATION: float = 10.0
@@ -60,6 +61,21 @@ var expression_edit: DMGraphExpressionField
 @onready var weight_spin: SpinBox = %WeightSpin
 @onready var blocking_check: CheckBox = %BlockingCheck
 @onready var content_container: VBoxContainer = %ContentContainer
+@onready var display_shell: VBoxContainer = %DisplayShell
+@onready var display_header_strip: ColorRect = %DisplayHeaderStrip
+@onready var display_meta_row: HBoxContainer = %DisplayMetaRow
+@onready var display_id_label: Label = %DisplayIdLabel
+@onready var display_character_row: HBoxContainer = %DisplayCharacterRow
+@onready var display_speaker_name_label: Label = %DisplaySpeakerNameLabel
+@onready var display_type_label: Label = %DisplayTypeLabel
+@onready var display_character_label: Label = %DisplayCharacterLabel
+@onready var display_text_row: HBoxContainer = %DisplayTextRow
+@onready var display_text_name_label: Label = %DisplayTextNameLabel
+@onready var display_body_label: Label = %DisplayBodyLabel
+@onready var display_expression_row: HBoxContainer = %DisplayExpressionRow
+@onready var display_expression_name_label: Label = %DisplayExpressionNameLabel
+@onready var display_expression_label: Label = %DisplayExpressionLabel
+@onready var display_blocking_label: Label = %DisplayBlockingLabel
 @onready var speaker_label: Label = %SpeakerLabel
 @onready var text_label: Label = %TextLabel
 @onready var dialogue_bottom_spacer: Control = %DialogueBottomSpacer
@@ -70,14 +86,50 @@ var expression_edit: DMGraphExpressionField
 
 
 func _ready() -> void:
-	resizable = true
+	resizable = false
 	_ensure_expression_code_field()
 	_setup_signals()
+	_style_display_labels()
 	DMGraphNodeTheme.apply_content_controls(content_container)
 	if is_instance_valid(expand_text_button):
 		expand_text_button.pressed.connect(_on_expand_text_pressed)
+	if not gui_input.is_connected(_on_graph_node_gui_input):
+		gui_input.connect(_on_graph_node_gui_input)
 	if not _pending_setup_data.is_empty():
 		_apply_setup(_pending_setup_data)
+
+
+func _style_display_labels() -> void:
+	if is_instance_valid(display_header_strip):
+		display_header_strip.hide()
+	if is_instance_valid(display_meta_row):
+		display_meta_row.hide()
+	for field_label: Label in [
+		display_speaker_name_label, display_text_name_label, display_expression_name_label,
+		speaker_label, text_label, goto_target_label,
+	]:
+		if is_instance_valid(field_label):
+			DMGraphNodeTheme.apply_field_name_label(field_label)
+	if is_instance_valid(display_character_label):
+		DMGraphNodeTheme.apply_display_character_label(display_character_label)
+		display_character_label.autowrap_mode = TextServer.AUTOWRAP_OFF
+		display_character_label.clip_text = true
+	if is_instance_valid(display_body_label):
+		DMGraphNodeTheme.apply_display_body_label(display_body_label)
+		display_body_label.autowrap_mode = TextServer.AUTOWRAP_OFF
+		display_body_label.clip_text = true
+	if is_instance_valid(display_expression_label):
+		DMGraphNodeTheme.apply_display_body_label(display_expression_label)
+		display_expression_label.autowrap_mode = TextServer.AUTOWRAP_OFF
+		display_expression_label.clip_text = true
+	if is_instance_valid(display_blocking_label):
+		DMGraphNodeTheme.apply_display_muted_label(display_blocking_label)
+	_style_goto_controls()
+
+
+func _style_goto_controls() -> void:
+	if is_instance_valid(goto_target_option):
+		DMGraphNodeTheme.apply_option_button(goto_target_option)
 
 
 ## Replaces the scene LineEdit expression field with a syntax highlighted CodeEdit.
@@ -141,10 +193,13 @@ func _setup_signals() -> void:
 		goto_target_option.item_selected.connect(_on_goto_target_selected)
 
 
-func set_available_cues(cue_names: Array[String]) -> void:
+func set_available_cues(cue_names: Array[String], autoload_names: PackedStringArray = PackedStringArray([])) -> void:
 	_available_cues = cue_names.duplicate()
 	if node_data.get("type", "") == DMConstants.TYPE_GOTO:
 		_refresh_goto_options()
+	if is_instance_valid(expression_edit):
+		expression_edit.completion_cue_names = cue_names.duplicate()
+		expression_edit.completion_autoload_names = autoload_names
 
 
 func _apply_setup(data: Dictionary) -> void:
@@ -164,7 +219,12 @@ func _apply_setup(data: Dictionary) -> void:
 
 func _end_field_setup() -> void:
 	_apply_expression_field_from_data()
+	_refresh_display_from_data()
 	_suppress_field_signals = false
+
+
+func refresh_display_from_data() -> void:
+	_refresh_display_from_data()
 
 
 func _apply_expression_field_from_data() -> void:
@@ -182,11 +242,12 @@ func _apply_expression_field_from_data() -> void:
 
 
 func _apply_node_size_policy(type: String) -> void:
-	match type:
-		DMConstants.TYPE_GOTO:
-			resizable = false
-		_:
-			resizable = true
+	resizable = false
+
+
+func _apply_type_color(type: String) -> void:
+	var accent: Color = DMGraphNodeTheme.get_accent_for_type(type)
+	DMGraphNodeTheme.apply_styled_node(self, accent, _get_title(node_data))
 
 
 func get_data() -> Dictionary:
@@ -224,22 +285,24 @@ func _get_title(data: Dictionary) -> String:
 			return data.type.capitalize() if data.type != "" else "Unknown"
 
 
-func _apply_type_color(type: String) -> void:
-	var color: Color = TYPE_COLORS.get(type, Color(0.3, 0.3, 0.35))
-	DMGraphNodeTheme.apply_title(self, color)
-	remove_theme_stylebox_override(&"panel")
-
-
-func _make_title_style(color: Color) -> StyleBoxFlat:
-	var style: StyleBoxFlat = StyleBoxFlat.new()
-	style.bg_color = color
-	style.corner_radius_top_left = 4
-	style.corner_radius_top_right = 4
-	style.content_margin_left = 8
-	style.content_margin_right = 8
-	style.content_margin_top = 4
-	style.content_margin_bottom = 4
-	return style
+func _get_display_type_label(type: String) -> String:
+	match type:
+		DMConstants.TYPE_DIALOGUE:
+			return "DIALOGUE"
+		DMConstants.TYPE_MUTATION:
+			return "MUTATION"
+		DMConstants.TYPE_WHILE:
+			return "WHILE"
+		DMConstants.TYPE_MATCH:
+			return "MATCH"
+		DMConstants.TYPE_WHEN:
+			return "WHEN"
+		DMConstants.TYPE_GOTO:
+			return "GOTO"
+		DMConstants.TYPE_RANDOM:
+			return "RANDOM"
+		_:
+			return type.to_upper()
 
 
 func ensure_ports_ready() -> void:
@@ -256,11 +319,12 @@ func _configure_ports(data: Dictionary) -> void:
 	if get_child_count() == 0:
 		return
 
+	var port_color: Color = DMGraphNodeTheme.get_port_color_for_type(data.type)
 	match data.type:
 		DMConstants.TYPE_GOTO:
-			set_slot(0, true, 0, PORT_COLOR, false, 0, PORT_COLOR)
+			set_slot(0, true, 0, port_color, false, 0, port_color)
 		_:
-			set_slot(0, true, 0, PORT_COLOR, true, 0, PORT_COLOR)
+			set_slot(0, true, 0, port_color, true, 0, port_color)
 
 
 func _update_fields(data: Dictionary) -> void:
@@ -336,6 +400,8 @@ func _refresh_goto_options() -> void:
 	if current_target != "" and not added.has(current_target):
 		goto_target_option.add_item(current_target)
 	_select_goto_target(current_target)
+	if is_instance_valid(goto_target_option):
+		DMGraphNodeTheme.apply_popup_menu(goto_target_option.get_popup())
 
 
 func _select_goto_target(target: String) -> void:
@@ -358,6 +424,8 @@ func _apply_bottom_spacer_size(spacer: Control) -> void:
 
 
 func _hide_all_fields() -> void:
+	if is_instance_valid(display_shell):
+		display_shell.hide()
 	for node: Node in [
 		header_label, content_label, dialogue_fields, goto_fields,
 		expression_edit, notes_edit, tags_edit, static_id_edit, weight_spin, blocking_check,
@@ -369,83 +437,64 @@ func _hide_all_fields() -> void:
 
 
 func _show_dialogue_fields(data: Dictionary) -> void:
-	if not is_instance_valid(dialogue_fields):
-		return
+	_sync_dialogue_hidden_fields(data)
+	if is_instance_valid(display_shell):
+		display_shell.show()
+	if is_instance_valid(dialogue_fields):
+		dialogue_fields.hide()
+	_refresh_display_from_data()
 
-	dialogue_fields.show()
-	if is_instance_valid(speaker_label):
-		speaker_label.show()
-	if is_instance_valid(text_label):
-		text_label.show()
 
+func _sync_dialogue_hidden_fields(data: Dictionary) -> void:
 	var text: String = data.get("text", "")
 	var body: String = text
+	var character: String = data.get("character", "")
 	if is_instance_valid(character_edit):
-		character_edit.show()
 		var colon_idx: int = text.find(": ")
 		if colon_idx > 0 and not text.begins_with("- ") and not text.begins_with("if ") and not text.begins_with("%"):
-			character_edit.text = text.substr(0, colon_idx)
+			character = text.substr(0, colon_idx)
 			body = text.substr(colon_idx + 2)
-		else:
-			character_edit.text = data.get("character", "")
-
+		character_edit.text = character
 	if is_instance_valid(text_edit):
-		text_edit.show()
 		text_edit.text = body
-		text_edit.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
-	if is_instance_valid(dialogue_bottom_spacer):
-		dialogue_bottom_spacer.show()
-		_apply_bottom_spacer_size(dialogue_bottom_spacer)
 
 
 func _show_response_fields(data: Dictionary) -> void:
-	if is_instance_valid(text_edit):
-		text_edit.show()
-		var t: String = data.get("text", "")
-		text_edit.text = t.trim_prefix("- ").strip_edges()
-	if is_instance_valid(expression_edit) and data.get("condition", "") != "":
+	_sync_dialogue_hidden_fields({
+		"text": data.get("text", "").trim_prefix("- ").strip_edges(),
+		"character": "",
+	})
+	if is_instance_valid(expression_edit):
 		_set_expression_field_type(DMConstants.TYPE_CONDITION)
-		expression_edit.show()
-		expression_edit.placeholder_text = "condition"
+		expression_edit.hide()
 		_set_expression_field_value(data.get("condition", ""))
+	if is_instance_valid(display_shell):
+		display_shell.show()
+	_refresh_display_from_data()
 
 
 func _show_expression_fields(data: Dictionary) -> void:
-	if is_instance_valid(header_label):
-		header_label.show()
-		match data.type:
-			DMConstants.TYPE_WHILE:
-				header_label.text = "While"
-			DMConstants.TYPE_MATCH:
-				header_label.text = "Match"
-			DMConstants.TYPE_WHEN:
-				header_label.text = "When"
-			_:
-				header_label.text = "Expression"
+	if is_instance_valid(display_shell):
+		display_shell.show()
 	if is_instance_valid(expression_edit):
 		_set_expression_field_type(data.type)
-		expression_edit.show()
+		expression_edit.hide()
 		_set_expression_field_value(data.get("expression", data.get("text", "")))
+	_refresh_display_from_data()
 
 
 func _show_mutation_fields(data: Dictionary) -> void:
-	if is_instance_valid(content_container):
-		content_container.add_theme_constant_override(&"separation", 8)
-	if is_instance_valid(header_label):
-		header_label.show()
-		header_label.text = "Mutation"
+	if is_instance_valid(display_shell):
+		display_shell.show()
 	if is_instance_valid(expression_edit):
 		_set_expression_field_type(DMConstants.TYPE_MUTATION)
-		expression_edit.show()
+		expression_edit.hide()
 		var expr: String = data.get("expression", data.get("text", ""))
 		_set_expression_field_value(expr)
-		expression_edit.custom_minimum_size.y = MUTATION_FIELD_HEIGHT
 	if is_instance_valid(blocking_check):
-		blocking_check.show()
+		blocking_check.hide()
 		blocking_check.button_pressed = data.get("mutation_blocking", true)
-		blocking_check.text = "Blocking (await)"
-	_ensure_mutation_expand_button()
-	call_deferred("_update_mutation_layout")
+	_refresh_display_from_data()
 
 
 func _update_metadata_fields(data: Dictionary) -> void:
@@ -540,13 +589,432 @@ func _calculate_dialogue_node_height(_text_width: float, text_height: float, exp
 
 
 func _finalize_content_size() -> void:
+	if is_instance_valid(display_shell) and display_shell.visible:
+		_update_display_layout()
+		return
+
 	match node_data.get("type", ""):
-		DMConstants.TYPE_DIALOGUE, DMConstants.TYPE_RANDOM:
-			_update_dialogue_text_layout()
-		DMConstants.TYPE_MUTATION:
-			_update_mutation_layout()
+		DMConstants.TYPE_GOTO:
+			_resize_node_to_content()
 		_:
 			_resize_node_to_content()
+
+
+func _refresh_display_from_data() -> void:
+	if node_data.is_empty() or not is_instance_valid(display_shell) or not display_shell.visible:
+		return
+
+	for row: Control in [
+		display_character_row, display_text_row, display_expression_row,
+	]:
+		if is_instance_valid(row):
+			row.hide()
+	for label: Label in [
+		display_character_label, display_body_label, display_expression_label, display_blocking_label,
+	]:
+		if is_instance_valid(label):
+			label.hide()
+
+	match node_data.get("type", ""):
+		DMConstants.TYPE_DIALOGUE, DMConstants.TYPE_RANDOM:
+			_populate_dialogue_display()
+		DMConstants.TYPE_MUTATION, DMConstants.TYPE_WHILE, DMConstants.TYPE_MATCH, DMConstants.TYPE_WHEN:
+			_populate_expression_display(node_data.get("type", ""))
+		DMConstants.TYPE_RESPONSE:
+			_populate_response_display()
+
+	if is_inside_tree():
+		call_deferred("_update_display_layout")
+
+
+func _populate_dialogue_display() -> void:
+	var char_name: String = ""
+	var body: String = ""
+	if is_instance_valid(character_edit):
+		char_name = character_edit.text
+	if is_instance_valid(text_edit):
+		body = text_edit.text
+	if body == "" and char_name == "":
+		var text: String = node_data.get("text", "")
+		var colon_idx: int = text.find(": ")
+		if colon_idx > 0 and not text.begins_with("- ") and not text.begins_with("if ") and not text.begins_with("%"):
+			char_name = text.substr(0, colon_idx)
+			body = text.substr(colon_idx + 2)
+		else:
+			body = text
+			char_name = node_data.get("character", "")
+
+	if is_instance_valid(display_character_row):
+		display_character_row.show()
+	if is_instance_valid(display_speaker_name_label):
+		display_speaker_name_label.text = "Speaker"
+	if is_instance_valid(display_character_label):
+		display_character_label.text = char_name if char_name != "" else "(none)"
+		display_character_label.show()
+
+	if is_instance_valid(display_text_row):
+		display_text_row.show()
+	if is_instance_valid(display_text_name_label):
+		display_text_name_label.text = "Text"
+	if is_instance_valid(display_body_label):
+		var full_text: String = body if body != "" else "(empty)"
+		display_body_label.text = DMGraphNodeTheme.truncate_display_text(full_text, DISPLAY_MAX_LINES)
+		display_body_label.tooltip_text = full_text
+		display_body_label.show()
+
+
+func _populate_expression_display(node_type: String) -> void:
+	var expr: String = ""
+	if is_instance_valid(expression_edit):
+		expr = expression_edit.text
+	if expr == "":
+		expr = node_data.get("expression", node_data.get("text", ""))
+
+	if is_instance_valid(display_expression_row):
+		display_expression_row.show()
+	if is_instance_valid(display_expression_name_label):
+		display_expression_name_label.text = _get_expression_field_label(node_type)
+	if is_instance_valid(display_expression_label):
+		var full_text: String = expr if expr != "" else "(empty)"
+		display_expression_label.text = DMGraphNodeTheme.truncate_display_text(full_text, DISPLAY_MAX_LINES)
+		display_expression_label.tooltip_text = full_text
+		display_expression_label.show()
+
+	if node_type == DMConstants.TYPE_MUTATION and is_instance_valid(display_blocking_label):
+		var blocking: bool = node_data.get("mutation_blocking", true)
+		if is_instance_valid(blocking_check):
+			blocking = blocking_check.button_pressed
+		display_blocking_label.text = "Blocking (await)" if blocking else "Non-blocking"
+		display_blocking_label.show()
+
+
+func _populate_response_display() -> void:
+	var text: String = node_data.get("text", "").trim_prefix("- ").strip_edges()
+	if is_instance_valid(text_edit) and text_edit.text != "":
+		text = text_edit.text
+	if is_instance_valid(display_text_row):
+		display_text_row.show()
+	if is_instance_valid(display_text_name_label):
+		display_text_name_label.text = "Text"
+	if is_instance_valid(display_body_label):
+		display_body_label.text = DMGraphNodeTheme.truncate_display_text(text if text != "" else "(empty)", DISPLAY_MAX_LINES)
+		display_body_label.tooltip_text = text
+		display_body_label.show()
+	var condition: String = node_data.get("condition", "")
+	if condition != "" and is_instance_valid(display_blocking_label):
+		display_blocking_label.text = "[if %s]" % condition
+		display_blocking_label.show()
+
+
+func _get_expression_field_label(node_type: String) -> String:
+	match node_type:
+		DMConstants.TYPE_MUTATION:
+			return "Mutation"
+		DMConstants.TYPE_WHILE:
+			return "While"
+		DMConstants.TYPE_MATCH:
+			return "Match"
+		DMConstants.TYPE_WHEN:
+			return "When"
+		_:
+			return "Expression"
+
+
+func _update_display_layout() -> void:
+	if _is_layout_updating or not is_inside_tree():
+		return
+	if not is_instance_valid(display_shell) or not display_shell.visible:
+		return
+
+	_is_layout_updating = true
+
+	var line_h: float = 18.0
+	var label_w: float = DMGraphNodeTheme.FIELD_LABEL_WIDTH
+	var width: float = MIN_DIALOGUE_WIDTH
+	for value_label: Label in [display_character_label, display_body_label, display_expression_label]:
+		if not is_instance_valid(value_label) or not value_label.visible:
+			continue
+		width = maxf(width, label_w + float(value_label.text.length()) * CHAR_WIDTH_ESTIMATE + 24.0)
+	width = mini(width, 480.0)
+	var value_width: float = maxf(80.0, width - label_w - 8.0)
+
+	var height: float = 4.0
+	if is_instance_valid(display_character_row) and display_character_row.visible:
+		if is_instance_valid(display_character_label):
+			display_character_label.custom_minimum_size = Vector2(value_width, line_h)
+		height += line_h + 2.0
+	if is_instance_valid(display_text_row) and display_text_row.visible:
+		if is_instance_valid(display_body_label) and display_body_label.visible:
+			var lines: int = mini(DISPLAY_MAX_LINES, maxi(1, display_body_label.text.split("\n", false).size()))
+			var body_h: float = line_h * float(lines)
+			display_body_label.custom_minimum_size = Vector2(value_width, body_h)
+			height += body_h + 2.0
+	if is_instance_valid(display_expression_row) and display_expression_row.visible:
+		if is_instance_valid(display_expression_label) and display_expression_label.visible:
+			var expr_lines: int = mini(DISPLAY_MAX_LINES, maxi(1, display_expression_label.text.split("\n", false).size()))
+			var expr_h: float = line_h * float(expr_lines)
+			display_expression_label.custom_minimum_size = Vector2(value_width, expr_h)
+			height += expr_h + 2.0
+	if is_instance_valid(display_blocking_label) and display_blocking_label.visible:
+		height += 14.0
+	height += DMGraphNodeTheme.NODE_BOTTOM_MARGIN + 6.0
+
+	display_shell.custom_minimum_size = Vector2(width, height)
+	custom_minimum_size = Vector2(width + 16.0, height + 28.0)
+	_is_layout_updating = false
+
+
+func _on_graph_node_gui_input(event: InputEvent) -> void:
+	if not event is InputEventMouseButton:
+		return
+	var mouse: InputEventMouseButton = event as InputEventMouseButton
+	if mouse.button_index != MOUSE_BUTTON_LEFT or not mouse.double_click:
+		return
+
+	var node_type: String = node_data.get("type", "")
+	match node_type:
+		DMConstants.TYPE_DIALOGUE, DMConstants.TYPE_RANDOM:
+			_open_dialogue_edit_popup()
+		DMConstants.TYPE_MUTATION:
+			_open_mutation_edit_popup()
+		DMConstants.TYPE_WHILE, DMConstants.TYPE_MATCH, DMConstants.TYPE_WHEN:
+			_open_expression_edit_popup()
+		DMConstants.TYPE_RESPONSE:
+			_open_response_edit_popup()
+
+
+func _open_dialogue_edit_popup() -> void:
+	if is_instance_valid(_text_popup):
+		_text_popup.queue_free()
+
+	_text_popup = Window.new()
+	_text_popup.title = "Edit dialogue"
+	_text_popup.unresizable = false
+	_text_popup.size = Vector2i(520, 360)
+	_text_popup.min_size = Vector2i(360, 240)
+	_text_popup.close_requested.connect(_text_popup.queue_free)
+
+	var margin: MarginContainer = MarginContainer.new()
+	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	margin.add_theme_constant_override(&"margin_left", 8)
+	margin.add_theme_constant_override(&"margin_right", 8)
+	margin.add_theme_constant_override(&"margin_top", 8)
+	margin.add_theme_constant_override(&"margin_bottom", 8)
+	_text_popup.add_child(margin)
+
+	var vbox: VBoxContainer = VBoxContainer.new()
+	vbox.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	margin.add_child(vbox)
+
+	var char_field: LineEdit = LineEdit.new()
+	char_field.placeholder_text = "Character name"
+	if is_instance_valid(character_edit):
+		char_field.text = character_edit.text
+	vbox.add_child(char_field)
+
+	var popup_edit: TextEdit = TextEdit.new()
+	popup_edit.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	popup_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	if is_instance_valid(text_edit):
+		popup_edit.text = text_edit.text
+	popup_edit.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
+	vbox.add_child(popup_edit)
+
+	var close_row: HBoxContainer = HBoxContainer.new()
+	close_row.alignment = BoxContainer.ALIGNMENT_END
+	var done_button: Button = Button.new()
+	done_button.text = "Done"
+	done_button.pressed.connect(func() -> void:
+		if is_instance_valid(character_edit):
+			character_edit.text = char_field.text
+		if is_instance_valid(text_edit):
+			text_edit.text = popup_edit.text
+		_on_content_changed()
+		_refresh_display_from_data()
+		_text_popup.queue_free()
+	)
+	close_row.add_child(done_button)
+	vbox.add_child(close_row)
+
+	add_child(_text_popup)
+	_text_popup.popup_centered()
+
+	if char_field.text != "":
+		_text_popup.title = "%s — dialogue" % char_field.text
+
+
+func _open_mutation_edit_popup() -> void:
+	if not is_instance_valid(expression_edit):
+		return
+
+	if is_instance_valid(_text_popup):
+		_text_popup.queue_free()
+
+	_text_popup = Window.new()
+	_text_popup.title = "Edit mutation"
+	_text_popup.unresizable = false
+	_text_popup.size = Vector2i(520, 240)
+	_text_popup.min_size = Vector2i(360, 160)
+	_text_popup.close_requested.connect(_text_popup.queue_free)
+
+	var margin: MarginContainer = MarginContainer.new()
+	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	margin.add_theme_constant_override(&"margin_left", 8)
+	margin.add_theme_constant_override(&"margin_right", 8)
+	margin.add_theme_constant_override(&"margin_top", 8)
+	margin.add_theme_constant_override(&"margin_bottom", 8)
+	_text_popup.add_child(margin)
+
+	var vbox: VBoxContainer = VBoxContainer.new()
+	vbox.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	margin.add_child(vbox)
+
+	var popup_edit: TextEdit = TextEdit.new()
+	popup_edit.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	popup_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	popup_edit.text = expression_edit.text
+	popup_edit.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
+	vbox.add_child(popup_edit)
+
+	var blocking_row: CheckBox = CheckBox.new()
+	blocking_row.text = "Blocking (await)"
+	blocking_row.button_pressed = node_data.get("mutation_blocking", true)
+	if is_instance_valid(blocking_check):
+		blocking_row.button_pressed = blocking_check.button_pressed
+	vbox.add_child(blocking_row)
+
+	var close_row: HBoxContainer = HBoxContainer.new()
+	close_row.alignment = BoxContainer.ALIGNMENT_END
+	var done_button: Button = Button.new()
+	done_button.text = "Done"
+	done_button.pressed.connect(func() -> void:
+		expression_edit.text = popup_edit.text
+		if is_instance_valid(blocking_check):
+			blocking_check.button_pressed = blocking_row.button_pressed
+		_on_content_changed()
+		_refresh_display_from_data()
+		_text_popup.queue_free()
+	)
+	close_row.add_child(done_button)
+	vbox.add_child(close_row)
+
+	add_child(_text_popup)
+	_text_popup.popup_centered()
+
+
+func _open_expression_edit_popup() -> void:
+	if not is_instance_valid(expression_edit):
+		return
+
+	if is_instance_valid(_text_popup):
+		_text_popup.queue_free()
+
+	_text_popup = Window.new()
+	_text_popup.title = "Edit expression"
+	_text_popup.unresizable = false
+	_text_popup.size = Vector2i(520, 200)
+	_text_popup.min_size = Vector2i(360, 120)
+	_text_popup.close_requested.connect(_text_popup.queue_free)
+
+	var margin: MarginContainer = MarginContainer.new()
+	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	margin.add_theme_constant_override(&"margin_left", 8)
+	margin.add_theme_constant_override(&"margin_right", 8)
+	margin.add_theme_constant_override(&"margin_top", 8)
+	margin.add_theme_constant_override(&"margin_bottom", 8)
+	_text_popup.add_child(margin)
+
+	var vbox: VBoxContainer = VBoxContainer.new()
+	vbox.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	margin.add_child(vbox)
+
+	var popup_edit: TextEdit = TextEdit.new()
+	popup_edit.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	popup_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	popup_edit.text = expression_edit.text
+	popup_edit.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
+	vbox.add_child(popup_edit)
+
+	var close_row: HBoxContainer = HBoxContainer.new()
+	close_row.alignment = BoxContainer.ALIGNMENT_END
+	var done_button: Button = Button.new()
+	done_button.text = "Done"
+	done_button.pressed.connect(func() -> void:
+		expression_edit.text = popup_edit.text
+		_on_content_changed()
+		_refresh_display_from_data()
+		_text_popup.queue_free()
+	)
+	close_row.add_child(done_button)
+	vbox.add_child(close_row)
+
+	add_child(_text_popup)
+	_text_popup.popup_centered()
+
+
+func _open_response_edit_popup() -> void:
+	if is_instance_valid(_text_popup):
+		_text_popup.queue_free()
+
+	_text_popup = Window.new()
+	_text_popup.title = "Edit response"
+	_text_popup.unresizable = false
+	_text_popup.size = Vector2i(480, 200)
+	_text_popup.min_size = Vector2i(320, 120)
+	_text_popup.close_requested.connect(_text_popup.queue_free)
+
+	var margin: MarginContainer = MarginContainer.new()
+	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	margin.add_theme_constant_override(&"margin_left", 8)
+	margin.add_theme_constant_override(&"margin_right", 8)
+	margin.add_theme_constant_override(&"margin_top", 8)
+	margin.add_theme_constant_override(&"margin_bottom", 8)
+	_text_popup.add_child(margin)
+
+	var vbox: VBoxContainer = VBoxContainer.new()
+	vbox.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	margin.add_child(vbox)
+
+	var popup_edit: TextEdit = TextEdit.new()
+	popup_edit.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	popup_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	if is_instance_valid(text_edit):
+		popup_edit.text = text_edit.text
+	vbox.add_child(popup_edit)
+
+	var condition_edit: LineEdit = LineEdit.new()
+	condition_edit.placeholder_text = "Condition (optional)"
+	condition_edit.text = node_data.get("condition", "")
+	if is_instance_valid(expression_edit):
+		condition_edit.text = expression_edit.text
+	vbox.add_child(condition_edit)
+
+	var close_row: HBoxContainer = HBoxContainer.new()
+	close_row.alignment = BoxContainer.ALIGNMENT_END
+	var done_button: Button = Button.new()
+	done_button.text = "Done"
+	done_button.pressed.connect(func() -> void:
+		if is_instance_valid(text_edit):
+			text_edit.text = popup_edit.text
+		if is_instance_valid(expression_edit):
+			expression_edit.set_text_silent(condition_edit.text)
+		_on_content_changed()
+		_refresh_display_from_data()
+		_text_popup.queue_free()
+	)
+	close_row.add_child(done_button)
+	vbox.add_child(close_row)
+
+	add_child(_text_popup)
+	_text_popup.popup_centered()
+
+
+func _on_expand_text_pressed() -> void:
+	_open_dialogue_edit_popup()
+
+
+func _on_expand_mutation_pressed() -> void:
+	_open_mutation_edit_popup()
 
 
 func _resize_node_to_content() -> void:
@@ -566,7 +1034,10 @@ func _resize_node_to_content() -> void:
 			custom_minimum_size = Vector2(mini(goto_width, 360.0), goto_height)
 			return
 		DMConstants.TYPE_MUTATION:
-			_update_mutation_layout()
+			if is_instance_valid(display_shell) and display_shell.visible:
+				_update_display_layout()
+			else:
+				_update_mutation_layout()
 			return
 
 	var height: float = 40.0
@@ -627,107 +1098,6 @@ func _update_mutation_layout() -> void:
 	_is_layout_updating = false
 
 
-func _on_expand_mutation_pressed() -> void:
-	if not is_instance_valid(expression_edit):
-		return
-
-	if is_instance_valid(_text_popup):
-		_text_popup.queue_free()
-
-	_text_popup = Window.new()
-	_text_popup.title = "Edit mutation"
-	_text_popup.unresizable = false
-	_text_popup.size = Vector2i(520, 200)
-	_text_popup.min_size = Vector2i(360, 120)
-	_text_popup.close_requested.connect(_text_popup.queue_free)
-
-	var margin: MarginContainer = MarginContainer.new()
-	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	margin.add_theme_constant_override(&"margin_left", 8)
-	margin.add_theme_constant_override(&"margin_right", 8)
-	margin.add_theme_constant_override(&"margin_top", 8)
-	margin.add_theme_constant_override(&"margin_bottom", 8)
-	_text_popup.add_child(margin)
-
-	var vbox: VBoxContainer = VBoxContainer.new()
-	vbox.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	margin.add_child(vbox)
-
-	var popup_edit: TextEdit = TextEdit.new()
-	popup_edit.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	popup_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	popup_edit.text = expression_edit.text
-	popup_edit.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
-	vbox.add_child(popup_edit)
-
-	var close_row: HBoxContainer = HBoxContainer.new()
-	close_row.alignment = BoxContainer.ALIGNMENT_END
-	var done_button: Button = Button.new()
-	done_button.text = "Done"
-	done_button.pressed.connect(func() -> void:
-		expression_edit.text = popup_edit.text
-		_on_content_changed()
-		_text_popup.queue_free()
-	)
-	close_row.add_child(done_button)
-	vbox.add_child(close_row)
-
-	add_child(_text_popup)
-	_text_popup.popup_centered()
-
-
-func _on_expand_text_pressed() -> void:
-	if not is_instance_valid(text_edit):
-		return
-
-	if is_instance_valid(_text_popup):
-		_text_popup.queue_free()
-
-	_text_popup = Window.new()
-	_text_popup.title = "Edit dialogue"
-	_text_popup.unresizable = false
-	_text_popup.size = Vector2i(520, 360)
-	_text_popup.min_size = Vector2i(360, 240)
-	_text_popup.close_requested.connect(_text_popup.queue_free)
-
-	var margin: MarginContainer = MarginContainer.new()
-	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	margin.add_theme_constant_override("margin_left", 8)
-	margin.add_theme_constant_override("margin_right", 8)
-	margin.add_theme_constant_override("margin_top", 8)
-	margin.add_theme_constant_override("margin_bottom", 8)
-	_text_popup.add_child(margin)
-
-	var vbox: VBoxContainer = VBoxContainer.new()
-	vbox.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	margin.add_child(vbox)
-
-	var popup_edit: TextEdit = TextEdit.new()
-	popup_edit.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	popup_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	popup_edit.text = text_edit.text
-	popup_edit.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
-	vbox.add_child(popup_edit)
-
-	var close_row: HBoxContainer = HBoxContainer.new()
-	close_row.alignment = BoxContainer.ALIGNMENT_END
-	var done_button: Button = Button.new()
-	done_button.text = "Done"
-	done_button.pressed.connect(func() -> void:
-		text_edit.text = popup_edit.text
-		_on_dialogue_text_changed()
-		_text_popup.queue_free()
-	)
-	close_row.add_child(done_button)
-	vbox.add_child(close_row)
-
-	add_child(_text_popup)
-	_text_popup.popup_centered()
-
-	if is_instance_valid(character_edit) and character_edit.text != "":
-		_text_popup.title = "%s — dialogue" % character_edit.text
-
-
 func _sync_data_from_fields() -> void:
 	node_data.position = position_offset
 
@@ -771,6 +1141,16 @@ func _sync_data_from_fields() -> void:
 		node_data.notes = notes_edit.text
 	if is_instance_valid(static_id_edit):
 		node_data.static_id = static_id_edit.text
+	if is_instance_valid(tags_edit) and tags_edit.visible:
+		if tags_edit.text.strip_edges() == "":
+			node_data.tags = PackedStringArray()
+		else:
+			var tag_parts: PackedStringArray = PackedStringArray()
+			for part: String in tags_edit.text.split(","):
+				var tag: String = part.strip_edges()
+				if tag != "":
+					tag_parts.append(tag)
+			node_data.tags = tag_parts
 
 
 func _sync_expression_field_to_data() -> void:
@@ -784,9 +1164,12 @@ func _sync_expression_field_to_data() -> void:
 
 
 func _on_content_changed(_arg: Variant = null) -> void:
-	if _suppress_field_signals: return
+	if _suppress_field_signals:
+		return
 	_sync_data_from_fields()
-	if node_data.get("type", "") == DMConstants.TYPE_MUTATION:
+	if is_instance_valid(display_shell) and display_shell.visible:
+		call_deferred("_refresh_display_from_data")
+	elif node_data.get("type", "") == DMConstants.TYPE_MUTATION:
 		call_deferred("_update_mutation_layout")
 	content_changed.emit()
 

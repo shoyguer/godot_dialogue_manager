@@ -41,7 +41,6 @@ static func serialize(document: DMGraphDocument) -> String:
 	var previous_line_number: int = 0
 
 	for node: Dictionary in content_nodes:
-		# Preserve blank lines between sections when line numbers jump.
 		if previous_line_number > 0 and node.line_number > previous_line_number + 1:
 			lines.append("")
 
@@ -61,6 +60,15 @@ static func serialize(document: DMGraphDocument) -> String:
 				lines.append("%s## %s" % [indent, note_line])
 
 		lines.append("%s%s" % [indent, _node_to_line_text(node)])
+
+		if node.type == DMConstants.TYPE_DIALOGUE:
+			for concurrent_line: String in node.get("concurrent_lines", PackedStringArray([])):
+				var concurrent_text: String = concurrent_line.strip_edges()
+				if concurrent_text != "":
+					if not concurrent_text.begins_with("|"):
+						concurrent_text = "| %s" % concurrent_text
+					lines.append("%s%s" % [indent, concurrent_text])
+
 		previous_line_number = node.line_number
 
 	if active_region != "":
@@ -78,30 +86,84 @@ static func _get_connected_node_ids(document: DMGraphDocument) -> Dictionary:
 
 
 static func _node_to_line_text(node: Dictionary) -> String:
-	var text: String = node.get("text", "")
+	var line: String = _build_base_line_text(node)
+	line = _append_inline_metadata(node, line)
+	return line
 
-	if text != "":
-		if node.type == DMConstants.TYPE_CUE and not text.begins_with("~ "):
-			return "~ %s" % node.get("cue_name", text.strip_edges())
-		return text
+
+static func _build_base_line_text(node: Dictionary) -> String:
+	var text: String = node.get("text", "")
 
 	match node.type:
 		DMConstants.TYPE_CUE:
-			return "~ %s" % node.get("cue_name", "cue")
+			if text.begins_with("~ "):
+				return text
+			return "~ %s" % node.get("cue_name", text.strip_edges())
 		DMConstants.TYPE_GOTO:
 			var prefix: String = "=>< " if node.get("is_snippet", false) else "=> "
-			return "%s%s" % [prefix, node.get("goto_target", "")]
+			var target: String = node.get("goto_target", "")
+			if target == "" and text != "":
+				return text
+			return "%s%s" % [prefix, target]
 		DMConstants.TYPE_END:
 			return "=> END"
 		DMConstants.TYPE_MUTATION:
-			return node.get("expression", "do something()")
+			return _format_mutation_line(node)
 		DMConstants.TYPE_RESPONSE:
 			var parts: Dictionary = DMGraphTreeBuilder.parse_response_parts(text, node.get("condition", ""))
-			var style: String = node.get("condition_style", parts.get("condition_style", "bracket"))
+			var style: String = node.get("condition_style", parts.get("condition_style", "slash"))
 			return DMGraphTreeBuilder.format_response_line(
 				parts.get("text", ""),
 				parts.get("condition", ""),
 				style
 			)
 		_:
+			if text != "":
+				return text
+			if node.type == DMConstants.TYPE_WHILE:
+				return node.get("expression", "while true")
+			if node.type == DMConstants.TYPE_MATCH:
+				return node.get("expression", "match value")
+			if node.type == DMConstants.TYPE_WHEN:
+				return node.get("expression", "when value")
 			return text
+
+
+static func _format_mutation_line(node: Dictionary) -> String:
+	var expr: String = node.get("expression", node.get("text", "do something()")).strip_edges()
+	if expr == "":
+		return "do something()"
+
+	var blocking: bool = node.get("mutation_blocking", true)
+	if expr.begins_with("do ") or expr.begins_with("do! "):
+		return ("do " if blocking else "do! ") + expr.trim_prefix("do! ").trim_prefix("do ").strip_edges()
+	if expr.begins_with("set "):
+		return expr
+	if expr.begins_with("$> ") or expr.begins_with("$>> "):
+		return ("$> " if blocking else "$>> ") + expr.trim_prefix("$>> ").trim_prefix("$> ").strip_edges()
+
+	if not blocking:
+		if expr.begins_with("do!") or expr.begins_with("$>>"):
+			return expr
+		return "do! %s" % expr
+	return expr if expr.begins_with("do ") or expr.begins_with("set ") or expr.begins_with("$>") else "do %s" % expr
+
+
+static func _append_inline_metadata(node: Dictionary, line: String) -> String:
+	var result: String = line
+
+	var static_id: String = node.get("static_id", "").strip_edges()
+	if static_id != "" and not ("[ID:%s]" % static_id) in result:
+		result += " [ID:%s]" % static_id
+
+	var tag_parts: PackedStringArray = PackedStringArray()
+	var raw_tags: Variant = node.get("tags", PackedStringArray())
+	if raw_tags is Array:
+		for tag: Variant in raw_tags:
+			var tag_text: String = str(tag).strip_edges()
+			if tag_text != "":
+				tag_parts.append(tag_text)
+		if tag_parts.size() > 0 and "[#" not in result:
+			result += " [#%s]" % ", ".join(tag_parts)
+
+	return result

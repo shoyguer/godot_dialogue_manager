@@ -6,18 +6,13 @@ class_name DMGraphCompactNode
 signal content_changed()
 
 
-const TYPE_COLORS: Dictionary = {
-	DMConstants.TYPE_CUE: Color(0.45, 0.25, 0.65),
-	DMConstants.TYPE_END: Color(0.25, 0.25, 0.3),
-}
-
-const PORT_COLOR: Color = DMGraphNodeTheme.PORT_COLOR
 const MIN_WIDTH: float = 120.0
 const BODY_HEIGHT: float = 40.0
+const PORT_COLOR: Color = DMGraphNodeTheme.PORT_COLOR
 
 
 var node_data: Dictionary = {}
-var _fill_color: Color = Color(0.45, 0.25, 0.65)
+var _fill_color: Color = DMGraphNodeTheme.ACCENT_CUE
 var has_errors: bool = false:
 	set(value):
 		has_errors = value
@@ -63,12 +58,18 @@ func has_input_port(port: int) -> bool:
 	return port == 0 and get_child_count() > 0
 
 
+func refresh_display_from_data() -> void:
+	if not node_data.is_empty():
+		_apply_from_data(node_data)
+
+
 func _apply_from_data(data: Dictionary) -> void:
 	name = data.id
 	position_offset = data.get("position", Vector2.ZERO)
-	_fill_color = TYPE_COLORS.get(data.type, Color(0.3, 0.3, 0.35))
+	_fill_color = DMGraphNodeTheme.get_accent_for_type(data.type)
 	DMGraphNodeTheme.apply_compact(self, _fill_color)
-	DMGraphNodeTheme.apply_compact_panel(row, _fill_color)
+	if is_instance_valid(row):
+		DMGraphNodeTheme.apply_compact_panel(row, _fill_color)
 	if is_instance_valid(title_label):
 		title_label.text = _get_title(data)
 	_configure_ports(data.type)
@@ -90,13 +91,14 @@ func _configure_ports(type: String) -> void:
 	if get_child_count() == 0:
 		return
 	clear_slot(0)
+	var port_color: Color = DMGraphNodeTheme.get_port_color_for_type(type)
 	match type:
 		DMConstants.TYPE_CUE:
-			set_slot(0, true, 0, PORT_COLOR, true, 0, PORT_COLOR)
+			set_slot(0, true, 0, port_color, true, 0, port_color)
 		DMConstants.TYPE_END:
-			set_slot(0, true, 0, PORT_COLOR, false, 0, PORT_COLOR)
+			set_slot(0, true, 0, port_color, false, 0, port_color)
 		_:
-			set_slot(0, true, 0, PORT_COLOR, true, 0, PORT_COLOR)
+			set_slot(0, true, 0, port_color, true, 0, port_color)
 
 
 func _update_size() -> void:

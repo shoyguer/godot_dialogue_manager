@@ -8,6 +8,12 @@ const FIXTURES: Array[String] = [
 	"~ start\nset count = 1\ndo something()\n=> END",
 	"~ start\n% Nathan: Maybe this.\n% Nathan: Or this.\n=> END",
 	"~ start\nwhile count < 3\n\tNathan: Looping.\n=> END",
+	"~ start\nNathan: Pick one.\n- Secret [if has_key /]\n\tNathan: You had the key.\n=> END",
+	"~ start\nNathan: Tagged line [ID:intro_line] [#happy, #mood=ok]\n## Translator note\n=> END",
+	"~ start\ndo! something()\n=> END",
+	"~ start\n=>< other_cue\n~ other_cue\nNathan: Snippet target.\n=> END",
+	"~ start\nmatch value\n\twhen 1\n\t\tNathan: One.\n\telse\n\t\tNathan: Other.\n=> END",
+	"~ start\nNathan: Main line.\n| Nathan: Concurrent line.\n=> END",
 ]
 
 
@@ -143,3 +149,34 @@ func test_compiler_build_tree_api() -> void:
 	var metadata: Dictionary = DMCompiler.build_tree_with_metadata(text)
 	assert(metadata.has("root"), "Metadata should include root")
 	assert(metadata.has("cues"), "Metadata should include cues")
+
+
+func test_graph_roundtrip_preserves_response_slash_condition() -> void:
+	var fixture: String = "~ start\nNathan: Pick.\n- Secret [if has_key /]\n\tNathan: Unlocked.\n=> END"
+	var document: DMGraphDocument = DMGraphTreeBuilder.build_from_text(fixture)
+	var roundtrip_text: String = DMGraphTextSerializer.serialize(document)
+	assert(roundtrip_text.contains("[if has_key /]"), "Slash condition should survive roundtrip: %s" % roundtrip_text)
+	assert(compile(roundtrip_text).errors.is_empty(), "Should compile after roundtrip")
+
+
+func test_graph_roundtrip_preserves_metadata() -> void:
+	var fixture: String = "~ start\nNathan: Hello [ID:greet] [#happy]\n## Note line\n=> END"
+	var document: DMGraphDocument = DMGraphTreeBuilder.build_from_text(fixture)
+	var roundtrip_text: String = DMGraphTextSerializer.serialize(document)
+	assert(roundtrip_text.contains("[ID:greet]"), "Static ID should survive: %s" % roundtrip_text)
+	assert(roundtrip_text.contains("[#happy]"), "Tags should survive: %s" % roundtrip_text)
+	assert(roundtrip_text.contains("## Note line"), "Notes should survive: %s" % roundtrip_text)
+
+
+func test_graph_roundtrip_preserves_nonblocking_mutation() -> void:
+	var fixture: String = "~ start\ndo! something()\n=> END"
+	var document: DMGraphDocument = DMGraphTreeBuilder.build_from_text(fixture)
+	var roundtrip_text: String = DMGraphTextSerializer.serialize(document)
+	assert(roundtrip_text.contains("do!"), "Non-blocking mutation should survive: %s" % roundtrip_text)
+
+
+func test_graph_roundtrip_preserves_snippet_goto() -> void:
+	var fixture: String = "~ start\n=>< other\n~ other\nNathan: There.\n=> END"
+	var document: DMGraphDocument = DMGraphTreeBuilder.build_from_text(fixture)
+	var roundtrip_text: String = DMGraphTextSerializer.serialize(document)
+	assert(roundtrip_text.contains("=>< other"), "Snippet goto should survive: %s" % roundtrip_text)

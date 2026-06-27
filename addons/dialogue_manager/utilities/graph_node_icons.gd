@@ -10,6 +10,7 @@ const ICON_DIR: String = "res://addons/dialogue_manager/assets/graph_nodes/"
 const NODE_ENTRIES: Array[Dictionary] = [
 	{ type = DMConstants.TYPE_CUE, label = "Cue", icon = "cue.svg" },
 	{ type = DMConstants.TYPE_DIALOGUE, label = "Dialogue", icon = "dialogue.svg" },
+	{ type = DMConstants.TYPE_RESPONSE, label = "Responses", icon = "response.svg" },
 	{ type = DMConstants.TYPE_CONDITION, label = "Condition", icon = "condition.svg" },
 	{ type = DMConstants.TYPE_WHILE, label = "While", icon = "while.svg" },
 	{ type = DMConstants.TYPE_MATCH, label = "Match", icon = "match.svg" },

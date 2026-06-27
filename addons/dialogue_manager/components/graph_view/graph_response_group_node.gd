@@ -8,31 +8,26 @@ signal add_response_requested()
 signal group_rebuilt()
 
 
-const ROW_SEPARATION: int = 8
-const ROW_MARGIN_TOP: int = 6
-const ROW_MARGIN_BOTTOM: int = 10
+const ROW_SEPARATION: int = 4
+const ROW_MARGIN_TOP: int = 2
+const ROW_MARGIN_BOTTOM: int = 4
+const ROW_HEIGHT: float = 24.0
 const MIN_TEXT_WIDTH: float = 180.0
-const MAX_TEXT_WIDTH: float = 640.0
-const MAX_RESPONSE_VISIBLE_HEIGHT: float = 160.0
-const TARGET_SINGLE_LINE_WIDTH: float = 300.0
-const DEFAULT_RESPONSE_TEXT_LINES: int = 2
-const IF_BUTTON_WIDTH: float = 40.0
-const CONDITION_FIELD_WIDTH: float = 80.0
-const CONDITION_FIELD_PADDING: float = 10.0
-const CONDITION_LINE_HEIGHT: float = 28.0
-const GROUP_HORIZONTAL_PADDING: float = 4.0
-const PORT_COLOR: Color = DMGraphNodeTheme.PORT_COLOR
+const MAX_TEXT_WIDTH: float = 480.0
+const GROUP_HORIZONTAL_PADDING: float = 8.0
 
 
 var group_data: Dictionary = {}
 var response_rows: Array[Dictionary] = []
 var _is_rebuilding: bool = false
 var _suppress_field_sync: bool = false
+var _row_popup: Window
+var _accent_color: Color = DMGraphNodeTheme.ACCENT_RESPONSE
 
 
 func _ready() -> void:
-	resizable = true
-	_apply_title_style()
+	resizable = false
+	_apply_node_title()
 
 
 func setup_group(responses: Array[Dictionary], node_position: Vector2 = Vector2.ZERO) -> void:
@@ -46,7 +41,7 @@ func setup_group(responses: Array[Dictionary], node_position: Vector2 = Vector2.
 
 	name = group_data.id
 	position_offset = node_position
-	title = "Responses"
+	_apply_node_title()
 
 	if is_node_ready() and is_inside_tree():
 		_rebuild_rows()
@@ -93,13 +88,25 @@ func sync_to_document_nodes(document: DMGraphDocument) -> void:
 			document.nodes[row.id] = row.duplicate(true)
 
 
+func refresh_display_from_data() -> void:
+	if not is_inside_tree() or response_rows.is_empty():
+		return
+	for i: int in range(0, response_rows.size()):
+		if i >= get_child_count():
+			break
+		var row: HBoxContainer = _get_row_content(get_child(i) as Control)
+		if row:
+			_update_row_display_label(row, i)
+
+
 func _parse_response_text(raw_text: String, stored_condition: String = "") -> Dictionary:
 	return DMGraphTreeBuilder.parse_response_parts(raw_text, stored_condition)
 
 
 func _disconnect_own_connections() -> void:
 	var graph_edit: GraphEdit = get_parent() as GraphEdit
-	if not graph_edit: return
+	if not graph_edit:
+		return
 	for conn: Dictionary in graph_edit.get_connection_list().duplicate():
 		if conn.from_node == name or conn.to_node == name:
 			graph_edit.disconnect_node(conn.from_node, conn.from_port, conn.to_node, conn.to_port)
@@ -113,14 +120,15 @@ func _configure_slots() -> void:
 	if child_count == 0:
 		return
 
+	var port_color: Color = DMGraphNodeTheme.get_port_color_for_type("response_group")
 	for i: int in range(0, response_rows.size()):
 		if i >= child_count:
 			break
-		set_slot(i, i == 0, 0, PORT_COLOR, true, 0, PORT_COLOR)
+		set_slot(i, i == 0, 0, port_color, true, 0, port_color)
 
 	var add_index: int = response_rows.size()
 	if add_index < child_count:
-		set_slot(add_index, false, 0, PORT_COLOR, false, 0, PORT_COLOR)
+		set_slot(add_index, false, 0, port_color, false, 0, port_color)
 
 
 func _rebuild_rows() -> void:
@@ -140,16 +148,17 @@ func _rebuild_rows() -> void:
 	for i: int in range(0, response_rows.size()):
 		var row_data: Dictionary = response_rows[i]
 		group_data.response_ids.append(row_data.id)
-		var row: HBoxContainer = _create_response_row(row_data)
+		var row: HBoxContainer = _create_response_row(row_data, i)
 		if not row:
 			continue
-		var row_control: Control = _wrap_response_row(row, i > 0)
+		var row_control: Control = _wrap_response_row(row, i)
 		add_child(row_control)
 
 	var add_row: HBoxContainer = _create_add_row()
 	add_child(_wrap_add_row(add_row))
 
 	_configure_slots()
+	_update_minimum_size()
 	_is_rebuilding = false
 	group_rebuilt.emit()
 	call_deferred("_end_row_rebuild")
@@ -157,233 +166,187 @@ func _rebuild_rows() -> void:
 
 func _end_row_rebuild() -> void:
 	_suppress_field_sync = false
-	call_deferred("_relayout_all_response_rows")
 
 
-func _wrap_response_row(row: HBoxContainer, add_top_margin: bool) -> MarginContainer:
-	var wrapper: MarginContainer = MarginContainer.new()
-	wrapper.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	wrapper.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	wrapper.add_theme_constant_override(&"margin_top", ROW_MARGIN_TOP if add_top_margin else 0)
-	wrapper.add_theme_constant_override(&"margin_bottom", ROW_MARGIN_BOTTOM)
-
-	var column: VBoxContainer = VBoxContainer.new()
-	column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	column.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	column.add_child(row)
-
-	var filler: Control = Control.new()
-	filler.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	column.add_child(filler)
-
-	var row_height: float = maxf(28.0, row.custom_minimum_size.y)
-	wrapper.custom_minimum_size.y = row_height + float(
-		ROW_MARGIN_TOP if add_top_margin else 0
-	) + float(ROW_MARGIN_BOTTOM)
-	wrapper.set_meta(&"response_row", row)
-	wrapper.add_child(column)
-	return wrapper
+func _apply_node_title() -> void:
+	_accent_color = DMGraphNodeTheme.get_accent_for_type("response_group")
+	DMGraphNodeTheme.apply_title(self, _accent_color)
+	title = "Responses"
 
 
-func _wrap_add_row(add_row: HBoxContainer) -> MarginContainer:
-	var wrapper: MarginContainer = MarginContainer.new()
-	wrapper.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	wrapper.add_theme_constant_override(&"margin_bottom", int(DMGraphNodeTheme.NODE_BOTTOM_MARGIN))
-	wrapper.add_child(add_row)
-	return wrapper
+func _wrap_response_row(row: HBoxContainer, row_index: int) -> PanelContainer:
+	var panel: PanelContainer = PanelContainer.new()
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	panel.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	panel.add_theme_stylebox_override(&"panel", DMGraphNodeTheme.make_row_strip_style(row_index))
+	panel.add_child(row)
+	panel.custom_minimum_size.y = ROW_HEIGHT + float(ROW_MARGIN_TOP if row_index > 0 else 0) + float(ROW_MARGIN_BOTTOM)
+	panel.set_meta(&"response_row", row)
+	return panel
+
+
+func _wrap_add_row(add_row: HBoxContainer) -> PanelContainer:
+	var panel: PanelContainer = PanelContainer.new()
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	panel.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	panel.add_theme_stylebox_override(&"panel", DMGraphNodeTheme.make_row_strip_style(response_rows.size()))
+	panel.add_child(add_row)
+	panel.custom_minimum_size.y = 24.0
+	return panel
 
 
 func _get_row_content(row_node: Control) -> HBoxContainer:
+	if row_node is PanelContainer and row_node.has_meta(&"response_row"):
+		return row_node.get_meta(&"response_row") as HBoxContainer
 	if row_node is MarginContainer and row_node.has_meta(&"response_row"):
 		return row_node.get_meta(&"response_row") as HBoxContainer
 	return row_node as HBoxContainer
 
 
-func _create_response_row(row_data: Dictionary) -> HBoxContainer:
+func _create_response_row(row_data: Dictionary, row_index: int) -> HBoxContainer:
 	var parsed: Dictionary = _parse_response_text(row_data.get("text", ""), row_data.get("condition", ""))
 	var display_text: String = parsed.get("text", "")
 	var condition: String = DMGraphTreeBuilder.normalize_condition_text(parsed.get("condition", ""))
 	row_data.condition = condition
-	row_data.condition_style = parsed.get("condition_style", row_data.get("condition_style", "bracket"))
+	row_data.condition_style = parsed.get("condition_style", row_data.get("condition_style", "slash"))
 
 	var row: HBoxContainer = HBoxContainer.new()
-	row.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	row.alignment = BoxContainer.ALIGNMENT_BEGIN
-	row.add_theme_constant_override("separation", ROW_SEPARATION)
+	row.add_theme_constant_override(&"separation", ROW_SEPARATION)
+	row.custom_minimum_size.y = ROW_HEIGHT
+
+	var number_label: Label = Label.new()
+	number_label.name = "ResponseNumberLabel"
+	number_label.text = "%d." % (row_index + 1)
+	number_label.custom_minimum_size = Vector2(DMGraphNodeTheme.RESPONSE_NUMBER_WIDTH, 0)
+	DMGraphNodeTheme.apply_response_number_label(number_label)
+	row.add_child(number_label)
+
+	var display_label: Label = DMGraphNodeTheme.create_display_label("ResponseDisplayLabel")
+	display_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	display_label.mouse_filter = Control.MOUSE_FILTER_STOP
+	DMGraphNodeTheme.apply_display_body_label(display_label)
+	display_label.gui_input.connect(_on_row_display_gui_input.bind(row_data.id))
+	row.add_child(display_label)
 
 	var text_edit: TextEdit = TextEdit.new()
 	text_edit.name = "TextEdit"
-	text_edit.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-	text_edit.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
-	text_edit.placeholder_text = "Response text"
-	text_edit.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
+	text_edit.visible = false
 	text_edit.text = display_text
 	text_edit.text_changed.connect(_on_field_changed.bind(row_data.id))
-	DMGraphNodeTheme.apply_field_background(text_edit)
-
-	var if_button: Button = Button.new()
-	if_button.name = "IfButton"
-	if_button.text = "If" if condition == "" else "If ✓"
-	if_button.toggle_mode = true
-	if_button.focus_mode = Control.FOCUS_NONE
-	if_button.custom_minimum_size = Vector2(IF_BUTTON_WIDTH, 0.0)
-	if_button.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
-	if_button.button_pressed = condition != ""
 
 	var condition_edit: DMGraphExpressionField = DMGraphExpressionField.new()
 	condition_edit.name = "ConditionEdit"
-	condition_edit.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-	condition_edit.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
-	condition_edit.placeholder_text = "condition"
+	condition_edit.visible = false
 	condition_edit.set_text_silent(condition)
-	condition_edit.visible = condition != ""
 	condition_edit.text_modified.connect(_on_field_changed.bind(row_data.id))
 
-	if_button.toggled.connect(_on_condition_toggled.bind(row_data.id, condition_edit, if_button))
-
 	row.add_child(text_edit)
-	row.add_child(if_button)
 	row.add_child(condition_edit)
-	row.set_meta("response_id", row_data.id)
+	row.set_meta(&"response_id", row_data.id)
+	row.set_meta(&"row_index", row_index)
 
-	var condition_width: float = _condition_width_for_text(condition, condition_edit) if condition != "" else 0.0
-	var text_size: Vector2 = _measure_response_text_size(text_edit, display_text)
-	_apply_response_text_size(text_edit, text_size)
-	if condition != "":
-		condition_edit.custom_minimum_size = Vector2(condition_width, CONDITION_LINE_HEIGHT)
-	row.custom_minimum_size = Vector2(
-		text_size.x + IF_BUTTON_WIDTH + condition_width + ROW_SEPARATION,
-		text_size.y
-	)
-
+	_update_row_display_label(row, row_index)
 	return row
 
 
-func _line_metrics(control: Control) -> Dictionary:
-	var font_size: float = float(control.get_theme_font_size(&"font_size"))
-	if font_size <= 0.0:
-		font_size = 14.0
-	return {
-		"font_size": font_size,
-		"char_width": font_size * 0.6,
-		"line_height": font_size * 1.4 + 6.0,
-	}
-
-
-func _measure_response_text_size(text_edit: TextEdit, text: String) -> Vector2:
-	var metrics: Dictionary = _line_metrics(text_edit)
-	var char_width: float = metrics.char_width
-	var line_height: float = metrics.line_height
-
-	var longest_line: int = 1
-	for line: String in text.split("\n"):
-		longest_line = maxi(longest_line, line.length())
-
-	var width: float = maxf(MIN_TEXT_WIDTH, float(longest_line) * char_width + 24.0)
-	var line_count: int = maxi(DEFAULT_RESPONSE_TEXT_LINES, text.split("\n", false).size())
-
-	if line_count == DEFAULT_RESPONSE_TEXT_LINES and width > TARGET_SINGLE_LINE_WIDTH:
-		var chars_per_line: int = maxi(1, int(TARGET_SINGLE_LINE_WIDTH / char_width))
-		if text.length() > chars_per_line:
-			line_count = maxi(DEFAULT_RESPONSE_TEXT_LINES, ceili(float(text.length()) / float(chars_per_line)))
-
-	width = mini(width, MAX_TEXT_WIDTH)
-	var max_lines: int = maxi(DEFAULT_RESPONSE_TEXT_LINES, ceili(MAX_RESPONSE_VISIBLE_HEIGHT / line_height))
-	line_count = mini(line_count, max_lines)
-
-	var height: float = line_height * float(line_count)
-	return Vector2(width, height)
-
-
-func _apply_response_text_size(text_edit: TextEdit, text_size: Vector2) -> void:
-	text_edit.custom_minimum_size = text_size
-
-
-func _condition_width_for_text(text: String, control: Control = null) -> float:
-	var clean_text: String = DMGraphTreeBuilder.normalize_condition_text(text)
-	if clean_text.is_empty():
-		return 0.0
-	var font_size: int = 14
-	var font: Font = null
-	if control:
-		font_size = int(_line_metrics(control).font_size)
-		font = control.get_theme_font(&"font")
-	if not font and control:
-		font = ThemeDB.fallback_font
-	var text_width: float = float(clean_text.length()) * 7.0
-	if font:
-		text_width = font.get_string_size(clean_text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x
-	return maxf(CONDITION_FIELD_WIDTH, text_width + CONDITION_FIELD_PADDING)
-
-
-func _get_max_response_text_width() -> float:
-	var max_width: float = MIN_TEXT_WIDTH
-	for i: int in range(0, response_rows.size()):
-		if i >= get_child_count():
-			break
-		var row: HBoxContainer = _get_row_content(get_child(i) as Control)
-		if not row:
-			continue
-		var text_edit: TextEdit = row.get_node_or_null("TextEdit") as TextEdit
-		if not is_instance_valid(text_edit):
-			continue
-		var text_size: Vector2 = _measure_response_text_size(text_edit, text_edit.text)
-		max_width = maxf(max_width, text_size.x)
-	return max_width
-
-
-func _get_max_active_condition_width() -> float:
-	var max_width: float = 0.0
-	for i: int in range(0, response_rows.size()):
-		if i >= get_child_count():
-			break
-		var row: HBoxContainer = _get_row_content(get_child(i) as Control)
-		if not row:
-			continue
-		var condition_edit: DMGraphExpressionField = row.get_node_or_null("ConditionEdit") as DMGraphExpressionField
-		if is_instance_valid(condition_edit) and condition_edit.visible:
-			max_width = maxf(max_width, _condition_width_for_text(condition_edit.text, condition_edit))
-	return max_width
-
-
-func _get_group_content_width(shared_text_width: float, shared_condition_width: float) -> float:
-	var width: float = shared_text_width + IF_BUTTON_WIDTH + ROW_SEPARATION
-	if shared_condition_width > 0.0:
-		width += shared_condition_width
-	return width + GROUP_HORIZONTAL_PADDING
-
-
-func _relayout_all_response_rows() -> void:
-	if not is_inside_tree() or _is_rebuilding:
-		return
-	var shared_text_width: float = _get_max_response_text_width()
-	var shared_condition_width: float = _get_max_active_condition_width()
-	for i: int in range(0, response_rows.size()):
-		if i >= get_child_count():
-			break
-		var row: HBoxContainer = _get_row_content(get_child(i) as Control)
-		if not row:
-			continue
-		_apply_row_layout(row, shared_text_width, shared_condition_width)
-	_update_minimum_size(shared_text_width, shared_condition_width)
-	_configure_slots()
-
-
-func _apply_row_layout(row: HBoxContainer, shared_text_width: float, shared_condition_width: float) -> void:
+func _update_row_display_label(row: HBoxContainer, row_index: int) -> void:
+	var number_label: Label = row.get_node_or_null("ResponseNumberLabel") as Label
+	var display_label: Label = row.get_node_or_null("ResponseDisplayLabel") as Label
 	var text_edit: TextEdit = row.get_node_or_null("TextEdit") as TextEdit
 	var condition_edit: DMGraphExpressionField = row.get_node_or_null("ConditionEdit") as DMGraphExpressionField
-	if not text_edit: return
-	var condition_visible: bool = is_instance_valid(condition_edit) and condition_edit.visible
-	var condition_width: float = shared_condition_width if condition_visible else 0.0
-	if condition_visible and is_instance_valid(condition_edit):
-		condition_edit.custom_minimum_size = Vector2(condition_width, CONDITION_LINE_HEIGHT)
-	var text_size: Vector2 = _measure_response_text_size(text_edit, text_edit.text)
-	_apply_response_text_size(text_edit, Vector2(shared_text_width, text_size.y))
-	row.custom_minimum_size = Vector2(
-		shared_text_width + IF_BUTTON_WIDTH + condition_width + ROW_SEPARATION,
-		text_size.y
+	if not is_instance_valid(display_label) or not is_instance_valid(text_edit):
+		return
+
+	if is_instance_valid(number_label):
+		number_label.text = "%d." % (row_index + 1)
+
+	var body: String = text_edit.text.strip_edges()
+	var line: String = body if body != "" else "(empty)"
+	var condition: String = ""
+	if is_instance_valid(condition_edit):
+		condition = DMGraphTreeBuilder.normalize_condition_text(condition_edit.text)
+	if condition != "":
+		line += " [if %s /]" % condition
+	display_label.text = DMGraphNodeTheme.truncate_display_text(line, 2)
+	display_label.tooltip_text = "%d. %s" % [row_index + 1, line]
+
+
+func _on_row_display_gui_input(event: InputEvent, response_id: String) -> void:
+	if not event is InputEventMouseButton:
+		return
+	var mouse: InputEventMouseButton = event as InputEventMouseButton
+	if mouse.button_index != MOUSE_BUTTON_LEFT or not mouse.double_click:
+		return
+	_open_row_edit_popup(response_id)
+
+
+func _open_row_edit_popup(response_id: String) -> void:
+	var row_index: int = _find_row_index(response_id)
+	if row_index == -1:
+		return
+	var row: HBoxContainer = _get_row_content(get_child(row_index) as Control)
+	if not row:
+		return
+
+	var text_edit: TextEdit = row.get_node_or_null("TextEdit") as TextEdit
+	var condition_edit: DMGraphExpressionField = row.get_node_or_null("ConditionEdit") as DMGraphExpressionField
+	if not is_instance_valid(text_edit):
+		return
+
+	if is_instance_valid(_row_popup):
+		_row_popup.queue_free()
+
+	_row_popup = Window.new()
+	_row_popup.title = "Edit response"
+	_row_popup.unresizable = false
+	_row_popup.size = Vector2i(480, 200)
+	_row_popup.min_size = Vector2i(320, 120)
+	_row_popup.close_requested.connect(_row_popup.queue_free)
+
+	var margin: MarginContainer = MarginContainer.new()
+	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	margin.add_theme_constant_override(&"margin_left", 8)
+	margin.add_theme_constant_override(&"margin_right", 8)
+	margin.add_theme_constant_override(&"margin_top", 8)
+	margin.add_theme_constant_override(&"margin_bottom", 8)
+	_row_popup.add_child(margin)
+
+	var vbox: VBoxContainer = VBoxContainer.new()
+	vbox.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	margin.add_child(vbox)
+
+	var popup_edit: TextEdit = TextEdit.new()
+	popup_edit.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	popup_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	popup_edit.text = text_edit.text
+	popup_edit.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
+	vbox.add_child(popup_edit)
+
+	var condition_field: LineEdit = LineEdit.new()
+	condition_field.placeholder_text = "Visibility condition [if expr /]"
+	if is_instance_valid(condition_edit):
+		condition_field.text = condition_edit.text
+	vbox.add_child(condition_field)
+
+	var close_row: HBoxContainer = HBoxContainer.new()
+	close_row.alignment = BoxContainer.ALIGNMENT_END
+	var done_button: Button = Button.new()
+	done_button.text = "Done"
+	done_button.pressed.connect(func() -> void:
+		text_edit.text = popup_edit.text
+		if is_instance_valid(condition_edit):
+			condition_edit.set_text_silent(condition_field.text)
+		_on_field_changed("", response_id)
+		_row_popup.queue_free()
 	)
+	close_row.add_child(done_button)
+	vbox.add_child(close_row)
+
+	add_child(_row_popup)
+	_row_popup.popup_centered()
 
 
 func _create_add_row() -> HBoxContainer:
@@ -393,6 +356,7 @@ func _create_add_row() -> HBoxContainer:
 	var add_button: Button = Button.new()
 	add_button.text = "Add response"
 	add_button.focus_mode = Control.FOCUS_NONE
+	add_button.flat = true
 	add_button.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	add_button.pressed.connect(_on_add_pressed)
 	call_deferred("_apply_add_button_icon", add_button)
@@ -404,30 +368,24 @@ func _create_add_row() -> HBoxContainer:
 func _apply_add_button_icon(add_button: Button) -> void:
 	if not is_instance_valid(add_button) or not is_inside_tree():
 		return
-	if has_theme_icon("Add", "EditorIcons"):
-		add_button.icon = get_theme_icon("Add", "EditorIcons")
+	if has_theme_icon(&"Add", &"EditorIcons"):
+		add_button.icon = get_theme_icon(&"Add", &"EditorIcons")
 
 
 func _on_add_pressed() -> void:
 	add_response_requested.emit()
 
 
-func _on_condition_toggled(enabled: bool, response_id: String, condition_edit: DMGraphExpressionField, if_button: Button) -> void:
-	if not is_instance_valid(condition_edit):
-		return
-	condition_edit.visible = enabled
-	if_button.text = "If" if not enabled else "If ✓"
-	if not enabled:
-		condition_edit.set_text_silent("")
-	_sync_row_from_fields(response_id)
-	call_deferred("_relayout_all_response_rows")
-	content_changed.emit()
-
-
 func _on_field_changed(_value: String, response_id: String) -> void:
-	if _is_rebuilding or _suppress_field_sync: return
+	if _is_rebuilding or _suppress_field_sync:
+		return
 	_sync_row_from_fields(response_id)
-	call_deferred("_relayout_all_response_rows")
+	var row_index: int = _find_row_index(response_id)
+	if row_index != -1:
+		var row: HBoxContainer = _get_row_content(get_child(row_index) as Control)
+		if row:
+			_update_row_display_label(row, row_index)
+	_update_minimum_size()
 	content_changed.emit()
 
 
@@ -442,7 +400,8 @@ func _sync_row_from_fields(response_id: String) -> void:
 		return
 
 	var row_node: HBoxContainer = _get_row_content(get_child(row_index) as Control)
-	if not row_node: return
+	if not row_node:
+		return
 
 	var text_edit: TextEdit = row_node.get_node_or_null("TextEdit") as TextEdit
 	var condition_edit: DMGraphExpressionField = row_node.get_node_or_null("ConditionEdit") as DMGraphExpressionField
@@ -454,7 +413,7 @@ func _sync_row_from_fields(response_id: String) -> void:
 		if is_instance_valid(text_edit):
 			body = text_edit.text.strip_edges()
 		var condition: String = ""
-		if is_instance_valid(condition_edit) and condition_edit.visible:
+		if is_instance_valid(condition_edit):
 			condition = DMGraphTreeBuilder.normalize_condition_text(condition_edit.text)
 
 		var parsed: Dictionary = DMGraphTreeBuilder.parse_response_parts("- %s" % body, condition)
@@ -464,15 +423,16 @@ func _sync_row_from_fields(response_id: String) -> void:
 		elif condition != "":
 			condition = DMGraphTreeBuilder.normalize_condition_text(condition)
 
-		if is_instance_valid(condition_edit) and condition_edit.visible and condition_edit.text != condition:
+		if is_instance_valid(condition_edit) and condition_edit.text != condition:
 			condition_edit.set_text_silent(condition)
 
 		response_data.condition = condition
 		if condition != "":
+			response_data.condition_style = "slash"
 			response_data.text = DMGraphTreeBuilder.format_response_line(
 				body,
 				condition,
-				response_data.get("condition_style", "bracket")
+				"slash"
 			)
 		else:
 			response_data.text = "- %s" % body
@@ -489,27 +449,26 @@ func _find_row_index(response_id: String) -> int:
 func finalize_layout_size() -> void:
 	if not is_inside_tree():
 		return
-	call_deferred("_relayout_all_response_rows")
+	call_deferred("_update_minimum_size")
 
 
-func _update_minimum_size(shared_text_width: float = MIN_TEXT_WIDTH, shared_condition_width: float = 0.0) -> void:
-	var total_height: float = 12.0
+func _update_minimum_size() -> void:
+	var max_width: float = MIN_TEXT_WIDTH
 	for i: int in range(0, response_rows.size()):
-		if i < get_child_count():
-			var wrapper: Control = get_child(i) as Control
-			var row: Control = _get_row_content(wrapper)
-			if row:
-				var row_height: float = maxf(28.0, row.custom_minimum_size.y)
-				if wrapper is MarginContainer:
-					row_height += float(wrapper.get_theme_constant(&"margin_top", &"MarginContainer"))
-					row_height += float(wrapper.get_theme_constant(&"margin_bottom", &"MarginContainer"))
-				total_height += row_height + float(ROW_SEPARATION)
-	total_height += 32.0 + DMGraphNodeTheme.NODE_BOTTOM_MARGIN
-	custom_minimum_size = Vector2(
-		_get_group_content_width(shared_text_width, shared_condition_width),
-		total_height
-	)
+		if i >= get_child_count():
+			break
+		var row: HBoxContainer = _get_row_content(get_child(i) as Control)
+		if not row:
+			continue
+		var display_label: Label = row.get_node_or_null("ResponseDisplayLabel") as Label
+		if is_instance_valid(display_label):
+			max_width = maxf(max_width, float(display_label.text.length()) * 7.0 + DMGraphNodeTheme.RESPONSE_NUMBER_WIDTH + 24.0)
+	max_width = mini(max_width, MAX_TEXT_WIDTH)
 
-
-func _apply_title_style() -> void:
-	DMGraphNodeTheme.apply_title(self, Color(0.2, 0.55, 0.3))
+	var total_height: float = 0.0
+	for i: int in range(0, get_child_count()):
+		var wrapper: Control = get_child(i) as Control
+		if wrapper:
+			total_height += wrapper.custom_minimum_size.y
+	total_height += DMGraphNodeTheme.NODE_BOTTOM_MARGIN + 8.0
+	custom_minimum_size = Vector2(max_width + GROUP_HORIZONTAL_PADDING, total_height)

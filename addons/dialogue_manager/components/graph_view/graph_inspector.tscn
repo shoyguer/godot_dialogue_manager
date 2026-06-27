@@ -31,6 +31,40 @@ unique_name_in_owner = true
 layout_mode = 2
 text = "Insert"
 
+[node name="DialogueSection" type="VBoxContainer" parent="Margin/VBox"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="CharacterEdit" type="LineEdit" parent="Margin/VBox/DialogueSection"]
+unique_name_in_owner = true
+layout_mode = 2
+placeholder_text = "Character name"
+
+[node name="DialogueEdit" type="TextEdit" parent="Margin/VBox/DialogueSection"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 64)
+layout_mode = 2
+placeholder_text = "Dialogue text"
+
+[node name="ResponseSection" type="VBoxContainer" parent="Margin/VBox"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="ResponseList" type="VBoxContainer" parent="Margin/VBox/ResponseSection"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="ExtraSection" type="VBoxContainer" parent="Margin/VBox"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 4
+
 [node name="StaticIdEdit" type="LineEdit" parent="Margin/VBox"]
 unique_name_in_owner = true
 layout_mode = 2

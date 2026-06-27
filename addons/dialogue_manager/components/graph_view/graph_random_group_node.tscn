@@ -1,0 +1,9 @@
+[gd_scene format=3 uid="uid://bye3hqfoga1ng"]
+
+[ext_resource type="Script" path="res://addons/dialogue_manager/components/graph_view/graph_random_group_node.gd" id="1"]
+
+[node name="DMGraphRandomGroupNode" type="GraphNode"]
+custom_minimum_size = Vector2(220, 80)
+resizable = false
+title = "Random"
+script = ExtResource("1")

@@ -23,7 +23,19 @@ var _is_rebuilding: bool = false
 
 func _ready() -> void:
 	resizable = true
-	DMGraphNodeTheme.apply_title(self, Color(0.2, 0.4, 0.7))
+	var accent: Color = DMGraphNodeTheme.get_accent_for_type(DMConstants.TYPE_CONDITION)
+	DMGraphNodeTheme.apply_title(self, accent)
+	title = "Condition"
+
+
+func _wrap_branch_row(row: Control, row_index: int) -> PanelContainer:
+	var panel: PanelContainer = PanelContainer.new()
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	panel.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	panel.add_theme_stylebox_override(&"panel", DMGraphNodeTheme.make_row_strip_style(row_index))
+	panel.add_child(row)
+	panel.custom_minimum_size = row.custom_minimum_size
+	return panel
 
 
 func setup_group(branches: Array[Dictionary], node_position: Vector2 = Vector2.ZERO) -> void:
@@ -39,6 +51,8 @@ func setup_group(branches: Array[Dictionary], node_position: Vector2 = Vector2.Z
 
 	name = group_data.id
 	position_offset = node_position
+	var accent: Color = DMGraphNodeTheme.get_accent_for_type(DMConstants.TYPE_CONDITION)
+	DMGraphNodeTheme.apply_title(self, accent)
 	title = "Condition"
 
 	if is_node_ready() and is_inside_tree():
@@ -133,6 +147,13 @@ func sync_to_document_nodes(document: DMGraphDocument) -> void:
 			document.nodes[row.id] = row.duplicate(true)
 
 
+func set_completion_context(cue_names: Array[String], autoload_names: PackedStringArray) -> void:
+	for field: Node in find_children("*", "DMGraphExpressionField", true, false):
+		if field is DMGraphExpressionField:
+			(field as DMGraphExpressionField).completion_cue_names = cue_names.duplicate()
+			(field as DMGraphExpressionField).completion_autoload_names = autoload_names
+
+
 func finalize_layout_size() -> void:
 	if not is_inside_tree():
 		return
@@ -187,8 +208,9 @@ func _rebuild_rows() -> void:
 		group_data.branch_ids.append(row_data.id)
 
 		var row_control: Control = _create_branch_row(row_data, branch_type, i)
-		add_child(row_control)
-		max_row_width = maxf(max_row_width, row_control.custom_minimum_size.x)
+		var wrapped: PanelContainer = _wrap_branch_row(row_control, i)
+		add_child(wrapped)
+		max_row_width = maxf(max_row_width, wrapped.custom_minimum_size.x)
 		set_slot(slot_index, slot_index == 0, 0, PORT_COLOR, true, 0, PORT_COLOR)
 		slot_index += 1
 

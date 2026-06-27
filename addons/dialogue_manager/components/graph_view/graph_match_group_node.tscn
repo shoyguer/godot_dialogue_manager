@@ -1,0 +1,9 @@
+[gd_scene format=3 uid="uid://dp5kax8dh3jsq"]
+
+[ext_resource type="Script" path="res://addons/dialogue_manager/components/graph_view/graph_match_group_node.gd" id="1"]
+
+[node name="DMGraphMatchGroupNode" type="GraphNode"]
+custom_minimum_size = Vector2(300, 80)
+resizable = true
+title = "Match"
+script = ExtResource("1")

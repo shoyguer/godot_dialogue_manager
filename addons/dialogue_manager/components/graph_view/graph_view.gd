@@ -19,7 +19,10 @@ signal node_selected(node_data: Dictionary)
 const GraphNodeScene: PackedScene = preload("res://addons/dialogue_manager/components/graph_view/graph_node.tscn")
 const CompactNodeScene: PackedScene = preload("res://addons/dialogue_manager/components/graph_view/graph_compact_node.tscn")
 const ResponseGroupScene: PackedScene = preload("res://addons/dialogue_manager/components/graph_view/graph_response_group_node.tscn")
+const OUTLINE_NODE_TITLE_HEIGHT: float = 28.0
 const ConditionGroupScene: PackedScene = preload("res://addons/dialogue_manager/components/graph_view/graph_condition_group_node.tscn")
+const MatchGroupScene: PackedScene = preload("res://addons/dialogue_manager/components/graph_view/graph_match_group_node.tscn")
+const RandomGroupScene: PackedScene = preload("res://addons/dialogue_manager/components/graph_view/graph_random_group_node.tscn")
 
 const PORT_COLOR: Color = DMGraphNodeTheme.PORT_COLOR
 
@@ -41,6 +44,8 @@ var _graph_nodes: Dictionary = {}
 
 var _response_port_map: Dictionary = {}
 var _condition_port_map: Dictionary = {}
+var _match_port_map: Dictionary = {}
+var _random_port_map: Dictionary = {}
 var _goto_visual_aliases: Dictionary = {}
 var _goto_canonical_by_target: Dictionary = {}
 
@@ -212,9 +217,10 @@ func _describe_graph_node(node_id: String) -> String:
 			return "Cue: %s" % compact.node_data.get("cue_name", "")
 		return "End"
 	if gn is DMGraphNode:
-		return (gn as DMGraphNode).title
+		var data: Dictionary = (gn as DMGraphNode).node_data
+		return data.get("id", node_id)
 	if gn is DMGraphResponseGroupNode:
-		return (gn as DMGraphResponseGroupNode).title
+		return (gn as DMGraphResponseGroupNode).get_group_id()
 	if gn is DMGraphConditionGroupNode:
 		return (gn as DMGraphConditionGroupNode).title
 	return node_id
@@ -270,6 +276,10 @@ func _ensure_all_graph_ports_ready() -> void:
 			(gn as DMGraphResponseGroupNode).ensure_ports_ready()
 		elif gn is DMGraphConditionGroupNode:
 			(gn as DMGraphConditionGroupNode).ensure_ports_ready()
+		elif gn is DMGraphMatchGroupNode:
+			(gn as DMGraphMatchGroupNode).ensure_ports_ready()
+		elif gn is DMGraphRandomGroupNode:
+			(gn as DMGraphRandomGroupNode).ensure_ports_ready()
 		elif gn is DMGraphCompactNode:
 			(gn as DMGraphCompactNode).ensure_ports_ready()
 		elif gn is DMGraphNode:
@@ -443,10 +453,17 @@ func _refresh_goto_cue_options() -> void:
 	var cue_names: Array[String] = []
 	if _full_document != null:
 		cue_names = DMGraphCueFilter.get_ordered_cue_names(_full_document)
+	var autoload_names: PackedStringArray = DMCompilation.new().get_autoload_names()
 	for id: String in _graph_nodes:
 		var gn: Node = _graph_nodes[id]
 		if gn is DMGraphNode:
-			(gn as DMGraphNode).set_available_cues(cue_names)
+			(gn as DMGraphNode).set_available_cues(cue_names, autoload_names)
+		elif gn is DMGraphMatchGroupNode:
+			(gn as DMGraphMatchGroupNode).set_completion_context(cue_names, autoload_names)
+		elif gn is DMGraphConditionGroupNode:
+			(gn as DMGraphConditionGroupNode).set_completion_context(cue_names, autoload_names)
+	if is_instance_valid(inspector):
+		inspector.set_completion_context(cue_names, autoload_names)
 
 
 
@@ -513,6 +530,8 @@ func clear_graph_ui() -> void:
 	_graph_nodes.clear()
 	_response_port_map.clear()
 	_condition_port_map.clear()
+	_match_port_map.clear()
+	_random_port_map.clear()
 	_goto_visual_aliases.clear()
 	_goto_canonical_by_target.clear()
 
@@ -585,6 +604,9 @@ func focus_cue(cue_name: String) -> void:
 
 func _populate_graph() -> void:
 	_response_port_map.clear()
+	_condition_port_map.clear()
+	_match_port_map.clear()
+	_random_port_map.clear()
 	_goto_visual_aliases.clear()
 	_goto_canonical_by_target.clear()
 
@@ -601,7 +623,10 @@ func _populate_graph() -> void:
 
 	var response_groups_by_parent: Dictionary = _build_response_groups_by_parent(ordered_nodes)
 	var condition_groups_by_first: Dictionary = _build_condition_groups_by_chain(ordered_nodes)
+	var match_groups_by_first: Dictionary = _build_match_groups_by_match(ordered_nodes)
+	var random_groups_by_parent: Dictionary = _build_random_groups_by_parent(ordered_nodes)
 	var created_response_groups: Dictionary = {}
+	var created_random_groups: Dictionary = {}
 	var index: int = 0
 	while index < ordered_nodes.size():
 		var node_data: Dictionary = ordered_nodes[index]
@@ -613,8 +638,24 @@ func _populate_graph() -> void:
 				created_response_groups[parent_id] = true
 			index += 1
 		elif node_data.type == DMConstants.TYPE_CONDITION:
+			if _is_match_else_node(node_data):
+				index += 1
+				continue
 			if condition_groups_by_first.has(node_data.id):
 				_create_condition_group_node(condition_groups_by_first[node_data.id])
+			index += 1
+		elif node_data.type == DMConstants.TYPE_MATCH:
+			if match_groups_by_first.has(node_data.id):
+				_create_match_group_node(match_groups_by_first[node_data.id])
+			index += 1
+		elif node_data.type == DMConstants.TYPE_WHEN:
+			index += 1
+		elif node_data.type == DMConstants.TYPE_RANDOM:
+			var random_parent_id: String = node_data.get("parent_id", "")
+			if not created_random_groups.has(random_parent_id):
+				var random_group: Array[Dictionary] = random_groups_by_parent.get(random_parent_id, [node_data])
+				_create_random_group_node(random_group)
+				created_random_groups[random_parent_id] = true
 			index += 1
 		else:
 			if node_data.type == DMConstants.TYPE_GOTO:
@@ -631,6 +672,58 @@ func _populate_graph() -> void:
 			index += 1
 
 	call_deferred("_finish_populating")
+
+
+func _is_match_else_node(node_data: Dictionary) -> bool:
+	if node_data.type != DMConstants.TYPE_CONDITION:
+		return false
+	if node_data.get("text", "").strip_edges().to_lower() != "else":
+		return false
+	var parent_id: String = node_data.get("parent_id", "")
+	if parent_id == "" or not document.has_node(parent_id):
+		return false
+	return document.nodes[parent_id].get("type", "") == DMConstants.TYPE_MATCH
+
+
+func _build_match_groups_by_match(ordered_nodes: Array[Dictionary]) -> Dictionary:
+	var groups_by_first: Dictionary = {}
+	for node_data: Dictionary in ordered_nodes:
+		if node_data.type != DMConstants.TYPE_MATCH:
+			continue
+		var cases: Array[Dictionary] = []
+		for child_id: String in node_data.get("child_ids", []):
+			if not document.has_node(child_id):
+				continue
+			var child: Dictionary = document.nodes[child_id]
+			if child.type == DMConstants.TYPE_WHEN:
+				cases.append(child)
+			elif child.type == DMConstants.TYPE_CONDITION and child.get("text", "").strip_edges().to_lower() == "else":
+				cases.append(child)
+		cases.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+			return a.line_number < b.line_number
+		)
+		groups_by_first[node_data.id] = {
+			match = node_data,
+			cases = cases,
+		}
+	return groups_by_first
+
+
+func _build_random_groups_by_parent(ordered_nodes: Array[Dictionary]) -> Dictionary:
+	var by_parent: Dictionary = {}
+	for node_data: Dictionary in ordered_nodes:
+		if node_data.type != DMConstants.TYPE_RANDOM:
+			continue
+		var parent_id: String = node_data.get("parent_id", "")
+		if not by_parent.has(parent_id):
+			by_parent[parent_id] = [] as Array[Dictionary]
+		(by_parent[parent_id] as Array[Dictionary]).append(node_data)
+	for parent_id: String in by_parent:
+		var group: Array[Dictionary] = by_parent[parent_id]
+		group.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+			return a.line_number < b.line_number
+		)
+	return by_parent
 
 
 func _collect_response_group_rows(first_response: Dictionary, response_groups_by_parent: Dictionary) -> Array[Dictionary]:
@@ -676,6 +769,8 @@ func _build_condition_groups_by_chain(ordered_nodes: Array[Dictionary]) -> Dicti
 			continue
 		var chain: Array[Dictionary] = []
 		while index < ordered_nodes.size() and ordered_nodes[index].type == DMConstants.TYPE_CONDITION:
+			if _is_match_else_node(ordered_nodes[index]):
+				break
 			chain.append(ordered_nodes[index])
 			index += 1
 		if chain.size() > 0:
@@ -701,7 +796,54 @@ func _create_response_group_node(responses: Array[Dictionary]) -> DMGraphRespons
 			port = i,
 		}
 
+	_attach_node_header_controls(group_node, OUTLINE_NODE_TITLE_HEIGHT)
+	return group_node
+
+
+func _create_match_group_node(group_payload: Dictionary) -> DMGraphMatchGroupNode:
+	var match_data: Dictionary = group_payload.get("match", {})
+	var cases: Array[Dictionary] = group_payload.get("cases", [])
+	var group_node: DMGraphMatchGroupNode = MatchGroupScene.instantiate()
+	var node_position: Vector2 = match_data.get("position", Vector2.ZERO)
+	group_node.content_changed.connect(_on_match_group_changed.bind(group_node))
+	group_node.add_when_requested.connect(_on_match_group_add_when_requested.bind(group_node))
+	group_node.add_else_requested.connect(_on_match_group_add_else_requested.bind(group_node))
+	group_node.group_rebuilt.connect(_on_match_group_rebuilt.bind(group_node))
+	graph_edit.add_child(group_node)
+	group_node.setup_group(match_data, cases, node_position)
+
+	var group_id: String = group_node.get_group_id()
+	_graph_nodes[group_id] = group_node
+
+	for i: int in range(0, cases.size()):
+		_match_port_map[cases[i].id] = {
+			group_id = group_id,
+			port = i + 1,
+		}
+
 	_attach_node_header_controls(group_node)
+	return group_node
+
+
+func _create_random_group_node(rows: Array[Dictionary]) -> DMGraphRandomGroupNode:
+	var group_node: DMGraphRandomGroupNode = RandomGroupScene.instantiate()
+	var node_position: Vector2 = rows[0].get("position", Vector2.ZERO) if rows.size() > 0 else Vector2.ZERO
+	group_node.content_changed.connect(_on_random_group_changed.bind(group_node))
+	group_node.add_line_requested.connect(_on_random_group_add_requested.bind(group_node))
+	group_node.group_rebuilt.connect(_on_random_group_rebuilt.bind(group_node))
+	graph_edit.add_child(group_node)
+	group_node.setup_group(rows, node_position)
+
+	var group_id: String = group_node.get_group_id()
+	_graph_nodes[group_id] = group_node
+
+	for i: int in range(0, rows.size()):
+		_random_port_map[rows[i].id] = {
+			group_id = group_id,
+			port = i,
+		}
+
+	_attach_node_header_controls(group_node, OUTLINE_NODE_TITLE_HEIGHT)
 	return group_node
 
 
@@ -740,7 +882,7 @@ func _create_graph_node(data: Dictionary) -> GraphNode:
 	graph_edit.add_child(gn)
 	gn.setup(data)
 	_graph_nodes[data.id] = gn
-	_attach_node_header_controls(gn)
+	_attach_node_header_controls(gn, OUTLINE_NODE_TITLE_HEIGHT)
 	return gn
 
 
@@ -749,11 +891,13 @@ func _create_compact_node(data: Dictionary) -> DMGraphCompactNode:
 	graph_edit.add_child(gn)
 	gn.setup(data)
 	_graph_nodes[data.id] = gn
-	_attach_node_header_controls(gn, 24.0)
+	_attach_node_header_controls(gn, OUTLINE_NODE_TITLE_HEIGHT)
 	return gn
 
 
 func _attach_node_header_controls(gn: GraphNode, title_height: float = DMGraphNodeHeaderControls.DEFAULT_TITLE_HEIGHT) -> void:
+	if gn is DMGraphCompactNode:
+		return
 	DMGraphNodeHeaderControls.attach(gn, _request_delete_node.bind(gn), title_height)
 
 
@@ -810,12 +954,18 @@ func _delete_visual_node(gn: GraphNode) -> void:
 	for id: String in document_ids:
 		_response_port_map.erase(id)
 		_condition_port_map.erase(id)
+		_match_port_map.erase(id)
+		_random_port_map.erase(id)
 		_remove_document_node(id)
 
 	if gn is DMGraphResponseGroupNode:
 		_graph_nodes.erase((gn as DMGraphResponseGroupNode).get_group_id())
 	elif gn is DMGraphConditionGroupNode:
 		_graph_nodes.erase((gn as DMGraphConditionGroupNode).get_group_id())
+	elif gn is DMGraphMatchGroupNode:
+		_graph_nodes.erase((gn as DMGraphMatchGroupNode).get_group_id())
+	elif gn is DMGraphRandomGroupNode:
+		_graph_nodes.erase((gn as DMGraphRandomGroupNode).get_group_id())
 	elif gn is DMGraphNode:
 		_graph_nodes.erase((gn as DMGraphNode).node_data.id)
 	elif gn is DMGraphCompactNode:
@@ -834,6 +984,14 @@ func _collect_document_ids_for_visual_node(gn: GraphNode) -> Array[String]:
 		ids.assign((gn as DMGraphResponseGroupNode).get_response_ids())
 	elif gn is DMGraphConditionGroupNode:
 		ids.assign((gn as DMGraphConditionGroupNode).get_branch_ids())
+	elif gn is DMGraphMatchGroupNode:
+		var match_group: DMGraphMatchGroupNode = gn as DMGraphMatchGroupNode
+		if not match_group.match_row.is_empty():
+			ids.append(match_group.match_row.id)
+		ids.append_array(match_group.get_case_ids())
+	elif gn is DMGraphRandomGroupNode:
+		for row: Dictionary in (gn as DMGraphRandomGroupNode).random_rows:
+			ids.append(row.id)
 	elif gn is DMGraphNode:
 		ids.append((gn as DMGraphNode).node_data.id)
 	elif gn is DMGraphCompactNode:
@@ -897,10 +1055,39 @@ func _connect_all_nodes() -> void:
 			_connect_graph_ports(body_mapping.group_id, body_mapping.port, to_id, 0)
 			continue
 
+		if _match_port_map.has(to_id) and kind in ["sequence", "branch"]:
+			if not group_inputs_connected.has(_match_port_map[to_id].group_id):
+				_connect_graph_ports(from_id, 0, _match_port_map[to_id].group_id, 0)
+				group_inputs_connected[_match_port_map[to_id].group_id] = true
+			continue
+
+		if _match_port_map.has(from_id) and kind == "body":
+			var match_mapping: Dictionary = _match_port_map[from_id]
+			_connect_graph_ports(match_mapping.group_id, match_mapping.port, to_id, 0)
+			continue
+
+		if _random_port_map.has(to_id) and kind == "branch":
+			var random_group_id: String = _random_port_map[to_id].group_id
+			if not group_inputs_connected.has(random_group_id):
+				_connect_graph_ports(from_id, 0, random_group_id, 0)
+				group_inputs_connected[random_group_id] = true
+			continue
+
+		if _random_port_map.has(from_id) and kind == "body":
+			var random_mapping: Dictionary = _random_port_map[from_id]
+			_connect_graph_ports(random_mapping.group_id, random_mapping.port, to_id, 0)
+			continue
+
 		if _response_port_map.has(to_id) or _response_port_map.has(from_id):
 			continue
 
 		if _condition_port_map.has(to_id) or _condition_port_map.has(from_id):
+			continue
+
+		if _match_port_map.has(to_id) or _match_port_map.has(from_id):
+			continue
+
+		if _random_port_map.has(to_id) or _random_port_map.has(from_id):
 			continue
 
 		_connect_graph_ports(from_id, 0, to_id, 0)
@@ -958,10 +1145,44 @@ func _count_expected_graph_connections() -> int:
 				count += 1
 			continue
 
+		if _match_port_map.has(to_id) and kind in ["sequence", "branch"]:
+			var match_input: Dictionary = _match_port_map[to_id]
+			if not group_inputs_connected.has(match_input.group_id):
+				if _can_connect_graph_ports(from_id, 0, match_input.group_id, 0):
+					count += 1
+				group_inputs_connected[match_input.group_id] = true
+			continue
+
+		if _match_port_map.has(from_id) and kind == "body":
+			var match_body: Dictionary = _match_port_map[from_id]
+			if _can_connect_graph_ports(match_body.group_id, match_body.port, to_id, 0):
+				count += 1
+			continue
+
+		if _random_port_map.has(to_id) and kind == "branch":
+			var random_group_id: String = _random_port_map[to_id].group_id
+			if not group_inputs_connected.has(random_group_id):
+				if _can_connect_graph_ports(from_id, 0, random_group_id, 0):
+					count += 1
+				group_inputs_connected[random_group_id] = true
+			continue
+
+		if _random_port_map.has(from_id) and kind == "body":
+			var random_body: Dictionary = _random_port_map[from_id]
+			if _can_connect_graph_ports(random_body.group_id, random_body.port, to_id, 0):
+				count += 1
+			continue
+
 		if _response_port_map.has(to_id) or _response_port_map.has(from_id):
 			continue
 
 		if _condition_port_map.has(to_id) or _condition_port_map.has(from_id):
+			continue
+
+		if _match_port_map.has(to_id) or _match_port_map.has(from_id):
+			continue
+
+		if _random_port_map.has(to_id) or _random_port_map.has(from_id):
 			continue
 
 		if _can_connect_graph_ports(from_id, 0, to_id, 0):
@@ -987,6 +1208,14 @@ func _can_connect_graph_ports(from_node: String, from_port: int, to_node: String
 	if from_gn is DMGraphConditionGroupNode and not (from_gn as DMGraphConditionGroupNode).is_structure_ready():
 		return false
 	if to_gn is DMGraphConditionGroupNode and not (to_gn as DMGraphConditionGroupNode).is_structure_ready():
+		return false
+	if from_gn is DMGraphMatchGroupNode and not (from_gn as DMGraphMatchGroupNode).is_structure_ready():
+		return false
+	if to_gn is DMGraphMatchGroupNode and not (to_gn as DMGraphMatchGroupNode).is_structure_ready():
+		return false
+	if from_gn is DMGraphRandomGroupNode and not (from_gn as DMGraphRandomGroupNode).is_structure_ready():
+		return false
+	if to_gn is DMGraphRandomGroupNode and not (to_gn as DMGraphRandomGroupNode).is_structure_ready():
 		return false
 	if not _node_has_output_port(from_gn, from_port):
 		return false
@@ -1021,6 +1250,10 @@ func _node_has_output_port(gn: GraphNode, port: int) -> bool:
 		return (gn as DMGraphResponseGroupNode).has_output_port(port)
 	if gn is DMGraphConditionGroupNode:
 		return (gn as DMGraphConditionGroupNode).has_output_port(port)
+	if gn is DMGraphMatchGroupNode:
+		return (gn as DMGraphMatchGroupNode).has_output_port(port - 1)
+	if gn is DMGraphRandomGroupNode:
+		return (gn as DMGraphRandomGroupNode).has_output_port(port)
 	if gn is DMGraphNode:
 		var node_type: String = (gn as DMGraphNode).node_data.get("type", "")
 		if node_type == DMConstants.TYPE_GOTO:
@@ -1038,6 +1271,10 @@ func _node_has_input_port(gn: GraphNode, port: int) -> bool:
 		return (gn as DMGraphResponseGroupNode).has_input_port(port)
 	if gn is DMGraphConditionGroupNode:
 		return (gn as DMGraphConditionGroupNode).has_input_port(port)
+	if gn is DMGraphMatchGroupNode:
+		return (gn as DMGraphMatchGroupNode).has_input_port(port)
+	if gn is DMGraphRandomGroupNode:
+		return (gn as DMGraphRandomGroupNode).has_input_port(port)
 	if gn is DMGraphNode:
 		return true
 	return true
@@ -1074,6 +1311,30 @@ func _sync_document_from_graph() -> void:
 				document.nodes[first_branch_id].position = condition_pos
 				if _full_document != null and _full_document.has_node(first_branch_id):
 					_full_document.nodes[first_branch_id].position = condition_pos
+			continue
+		if gn is DMGraphMatchGroupNode:
+			var match_group: DMGraphMatchGroupNode = gn as DMGraphMatchGroupNode
+			match_group.sync_to_document_nodes(document)
+			if _full_document != null:
+				match_group.sync_to_document_nodes(_full_document)
+			if not match_group.match_row.is_empty():
+				var match_pos: Vector2 = match_group.position_offset
+				var match_id: String = match_group.match_row.id
+				document.nodes[match_id].position = match_pos
+				if _full_document != null and _full_document.has_node(match_id):
+					_full_document.nodes[match_id].position = match_pos
+			continue
+		if gn is DMGraphRandomGroupNode:
+			var random_group: DMGraphRandomGroupNode = gn as DMGraphRandomGroupNode
+			random_group.sync_to_document_nodes(document)
+			if _full_document != null:
+				random_group.sync_to_document_nodes(_full_document)
+			if random_group.random_rows.size() > 0:
+				var random_pos: Vector2 = random_group.position_offset
+				var first_random_id: String = random_group.random_rows[0].id
+				document.nodes[first_random_id].position = random_pos
+				if _full_document != null and _full_document.has_node(first_random_id):
+					_full_document.nodes[first_random_id].position = random_pos
 			continue
 		if gn is DMGraphCompactNode:
 			var compact_data: Dictionary = (gn as DMGraphCompactNode).get_data()
@@ -1256,6 +1517,12 @@ func _create_default_node_data(type: String) -> Dictionary:
 
 			data.expression = "match value"
 
+		DMConstants.TYPE_WHEN:
+
+			data.text = "when value"
+
+			data.expression = "when value"
+
 		DMConstants.TYPE_MUTATION:
 
 			data.text = "do something()"
@@ -1381,6 +1648,33 @@ func _on_node_type_selected(type: String, spawn_position: Variant = null) -> voi
 
 	if type == DMConstants.TYPE_CONDITION:
 		_create_condition_group_node([data])
+		document_changed.emit()
+		_commit_immediate_undo("Add node")
+		return
+
+	if type == DMConstants.TYPE_MATCH:
+		var when_data: Dictionary = _create_default_node_data(DMConstants.TYPE_WHEN)
+		when_data.parent_id = data.id
+		when_data.position = data.position + Vector2(0, 80)
+		when_data.line_number = data.line_number + 1
+		data.child_ids = [when_data.id] as Array[String]
+		document.add_node(when_data)
+		if _full_document != null:
+			_full_document.add_node(when_data.duplicate(true))
+		_create_match_group_node({ match = data, cases = [when_data] })
+		document_changed.emit()
+		_commit_immediate_undo("Add node")
+		return
+
+	if type == DMConstants.TYPE_RESPONSE:
+		data.condition_style = "slash"
+		_create_response_group_node([data])
+		document_changed.emit()
+		_commit_immediate_undo("Add node")
+		return
+
+	if type == DMConstants.TYPE_RANDOM:
+		_create_random_group_node([data])
 		document_changed.emit()
 		_commit_immediate_undo("Add node")
 		return
@@ -1583,30 +1877,263 @@ func _on_condition_group_rebuilt(_group_node: DMGraphConditionGroupNode) -> void
 	call_deferred("_refresh_graph_connections")
 
 
+func _on_match_group_changed(group_node: DMGraphMatchGroupNode) -> void:
+	if _is_updating:
+		return
+	_schedule_debounced_undo()
+	group_node.sync_to_document_nodes(document)
+	if _full_document != null:
+		group_node.sync_to_document_nodes(_full_document)
+	document_changed.emit()
+
+
+func _on_match_group_add_when_requested(group_node: DMGraphMatchGroupNode) -> void:
+	if _is_updating:
+		return
+	_begin_immediate_undo()
+	var new_case: Dictionary = _create_default_node_data(DMConstants.TYPE_WHEN)
+	new_case.parent_id = group_node.match_row.id
+	var last_line: int = int(group_node.match_row.get("line_number", 0))
+	if group_node.case_rows.size() > 0:
+		last_line = int(group_node.case_rows[-1].get("line_number", 0))
+	new_case.line_number = last_line + 1
+
+	var insert_index: int = group_node.case_rows.size()
+	for i: int in range(0, group_node.case_rows.size()):
+		if DMGraphMatchGroupNode.infer_case_type(group_node.case_rows[i]) == "else":
+			insert_index = i
+			break
+
+	document.add_node(new_case)
+	if _full_document != null:
+		_full_document.add_node(new_case.duplicate(true))
+
+	group_node.match_row.child_ids = group_node.match_row.get("child_ids", []) as Array[String]
+	(group_node.match_row.child_ids as Array[String]).append(new_case.id)
+	document.nodes[group_node.match_row.id] = group_node.match_row.duplicate(true)
+
+	group_node.case_rows.insert(insert_index, new_case)
+	group_node.setup_group(group_node.match_row, group_node.case_rows, group_node.position_offset)
+	_rebuild_match_port_map(group_node)
+	document_changed.emit()
+	_commit_immediate_undo("Add when branch")
+
+
+func _on_match_group_add_else_requested(group_node: DMGraphMatchGroupNode) -> void:
+	if _is_updating:
+		return
+	if group_node.has_else_case():
+		return
+
+	_begin_immediate_undo()
+	var new_case: Dictionary = _create_default_node_data(DMConstants.TYPE_CONDITION)
+	new_case.text = "else"
+	new_case.expression = ""
+	new_case.branch_type = "else"
+	new_case.parent_id = group_node.match_row.id
+	var last_line: int = int(group_node.match_row.get("line_number", 0))
+	if group_node.case_rows.size() > 0:
+		last_line = int(group_node.case_rows[-1].get("line_number", 0))
+	new_case.line_number = last_line + 1
+
+	document.add_node(new_case)
+	if _full_document != null:
+		_full_document.add_node(new_case.duplicate(true))
+
+	group_node.match_row.child_ids = group_node.match_row.get("child_ids", []) as Array[String]
+	(group_node.match_row.child_ids as Array[String]).append(new_case.id)
+	document.nodes[group_node.match_row.id] = group_node.match_row.duplicate(true)
+
+	group_node.case_rows.append(new_case)
+	group_node.setup_group(group_node.match_row, group_node.case_rows, group_node.position_offset)
+	_rebuild_match_port_map(group_node)
+	document_changed.emit()
+	_commit_immediate_undo("Add else branch")
+
+
+func _rebuild_match_port_map(group_node: DMGraphMatchGroupNode) -> void:
+	for case_id: String in group_node.get_case_ids():
+		_match_port_map.erase(case_id)
+	for i: int in range(0, group_node.case_rows.size()):
+		_match_port_map[group_node.case_rows[i].id] = {
+			group_id = group_node.get_group_id(),
+			port = i + 1,
+		}
+	_graph_nodes[group_node.get_group_id()] = group_node
+	call_deferred("_refresh_graph_connections")
+
+
+func _on_match_group_rebuilt(_group_node: DMGraphMatchGroupNode) -> void:
+	if _is_updating:
+		return
+	call_deferred("_refresh_graph_connections")
+
+
+func _on_random_group_changed(group_node: DMGraphRandomGroupNode) -> void:
+	if _is_updating:
+		return
+	_schedule_debounced_undo()
+	group_node.sync_to_document_nodes(document)
+	if _full_document != null:
+		group_node.sync_to_document_nodes(_full_document)
+	document_changed.emit()
+
+
+func _on_random_group_add_requested(group_node: DMGraphRandomGroupNode) -> void:
+	if _is_updating:
+		return
+	_begin_immediate_undo()
+	var new_row: Dictionary = _create_default_node_data(DMConstants.TYPE_RANDOM)
+	var last_line: int = 0
+	if group_node.random_rows.size() > 0:
+		last_line = int(group_node.random_rows[-1].get("line_number", 0))
+		new_row.parent_id = group_node.random_rows[0].get("parent_id", "")
+	new_row.line_number = last_line + 1
+
+	document.add_node(new_row)
+	if _full_document != null:
+		_full_document.add_node(new_row.duplicate(true))
+
+	group_node.random_rows.append(new_row)
+	group_node.setup_group(group_node.random_rows, group_node.position_offset)
+	_rebuild_random_port_map(group_node)
+	document_changed.emit()
+	_commit_immediate_undo("Add random line")
+
+
+func _rebuild_random_port_map(group_node: DMGraphRandomGroupNode) -> void:
+	for row: Dictionary in group_node.random_rows:
+		_random_port_map.erase(row.id)
+	for i: int in range(0, group_node.random_rows.size()):
+		_random_port_map[group_node.random_rows[i].id] = {
+			group_id = group_node.get_group_id(),
+			port = i,
+		}
+	_graph_nodes[group_node.get_group_id()] = group_node
+	call_deferred("_refresh_graph_connections")
+
+
+func _on_random_group_rebuilt(_group_node: DMGraphRandomGroupNode) -> void:
+	if _is_updating:
+		return
+	call_deferred("_refresh_graph_connections")
+
+
 
 
 
 func _on_inspector_changed() -> void:
+	if inspector.is_inspecting_response_group():
+		var updates: Array[Dictionary] = inspector.get_response_row_updates()
+		if updates.is_empty():
+			return
+		_schedule_debounced_undo()
+		for gn: GraphNode in graph_edit.get_children():
+			if gn is DMGraphResponseGroupNode:
+				var group: DMGraphResponseGroupNode = gn as DMGraphResponseGroupNode
+				if group.get_group_id() == inspector.current_node_data.get("id", ""):
+					group.response_rows = updates
+					group.setup_group(updates, group.position_offset)
+					group.sync_to_document_nodes(document)
+					if _full_document != null:
+						group.sync_to_document_nodes(_full_document)
+					break
+		document_changed.emit()
+		return
+
+	if inspector.is_inspecting_condition_group():
+		var branch_updates: Array[Dictionary] = inspector.get_condition_branch_updates()
+		if branch_updates.is_empty():
+			return
+		_schedule_debounced_undo()
+		for gn: GraphNode in graph_edit.get_children():
+			if gn is DMGraphConditionGroupNode:
+				var group: DMGraphConditionGroupNode = gn as DMGraphConditionGroupNode
+				if group.get_group_id() == inspector.current_node_data.get("id", ""):
+					group.branch_rows = branch_updates
+					group.setup_group(branch_updates, group.position_offset)
+					group.sync_to_document_nodes(document)
+					if _full_document != null:
+						group.sync_to_document_nodes(_full_document)
+					_rebuild_condition_port_map(group)
+					break
+		document_changed.emit()
+		return
+
+	if inspector.is_inspecting_match_group():
+		var match_updates: Dictionary = inspector.get_match_group_updates()
+		if match_updates.is_empty():
+			return
+		_schedule_debounced_undo()
+		for gn: GraphNode in graph_edit.get_children():
+			if gn is DMGraphMatchGroupNode:
+				var group: DMGraphMatchGroupNode = gn as DMGraphMatchGroupNode
+				if group.get_group_id() == inspector.current_node_data.get("id", ""):
+					group.match_row = match_updates.get("match", group.match_row)
+					group.case_rows = match_updates.get("cases", group.case_rows)
+					group.setup_group(group.match_row, group.case_rows, group.position_offset)
+					group.sync_to_document_nodes(document)
+					if _full_document != null:
+						group.sync_to_document_nodes(_full_document)
+					_rebuild_match_port_map(group)
+					break
+		document_changed.emit()
+		return
+
+	if inspector.is_inspecting_random_group():
+		var random_updates: Array[Dictionary] = inspector.get_random_row_updates()
+		if random_updates.is_empty():
+			return
+		_schedule_debounced_undo()
+		for gn: GraphNode in graph_edit.get_children():
+			if gn is DMGraphRandomGroupNode:
+				var group: DMGraphRandomGroupNode = gn as DMGraphRandomGroupNode
+				if group.get_group_id() == inspector.current_node_data.get("id", ""):
+					group.random_rows = random_updates
+					group.setup_group(random_updates, group.position_offset)
+					group.sync_to_document_nodes(document)
+					if _full_document != null:
+						group.sync_to_document_nodes(_full_document)
+					_rebuild_random_port_map(group)
+					break
+		document_changed.emit()
+		return
 
 	var updated: Dictionary = inspector.get_updated_data()
-
 	if updated.is_empty():
-
 		return
 
 	_schedule_debounced_undo()
 
 	var id: String = updated.id
+	var old_cue_name: String = ""
+	if updated.get("type", "") == DMConstants.TYPE_CUE and document.has_node(id):
+		old_cue_name = document.nodes[id].get("cue_name", "")
 
 	if _graph_nodes.has(id):
-
 		_graph_nodes[id].setup(updated)
+		if _graph_nodes[id] is DMGraphNode:
+			(_graph_nodes[id] as DMGraphNode).refresh_display_from_data()
+		elif _graph_nodes[id] is DMGraphCompactNode:
+			(_graph_nodes[id] as DMGraphCompactNode).refresh_display_from_data()
 
-		document.nodes[id] = updated
-		if _full_document != null:
-			_full_document.nodes[id] = updated
+	document.nodes[id] = updated
+	if _full_document != null:
+		_full_document.nodes[id] = updated
 
-		document_changed.emit()
+	if updated.get("type", "") == DMConstants.TYPE_CUE:
+		var new_cue_name: String = updated.get("cue_name", "")
+		if old_cue_name != "" and old_cue_name != new_cue_name:
+			document.cue_map.erase(old_cue_name)
+			if _full_document != null:
+				_full_document.cue_map.erase(old_cue_name)
+		if new_cue_name != "":
+			document.cue_map[new_cue_name] = id
+			if _full_document != null:
+				_full_document.cue_map[new_cue_name] = id
+		_refresh_goto_cue_options()
+
+	document_changed.emit()
 
 
 
@@ -1629,15 +2156,14 @@ func _on_file_inspector_changed(_arg: Variant = null) -> void:
 
 
 func _on_insert_requested(text: String) -> void:
-
+	if is_instance_valid(inspector) and is_instance_valid(inspector.dialogue_edit) and inspector.dialogue_edit.visible:
+		if inspector.dialogue_edit.has_focus():
+			inspector.dialogue_edit.insert_text_at_caret(text)
+			return
 	for gn: DMGraphNode in _graph_nodes.values():
-
 		var te: TextEdit = gn.get_node_or_null("%TextEdit")
-
 		if te and te.has_focus():
-
 			te.insert_text_at_caret(text)
-
 			return
 
 
@@ -1716,6 +2242,22 @@ func _check_selection() -> void:
 			_select_node(gn as DMGraphNode)
 		elif gn is DMGraphCompactNode:
 			_select_node_data((gn as DMGraphCompactNode).get_data())
+		elif gn is DMGraphResponseGroupNode:
+			var group: DMGraphResponseGroupNode = gn as DMGraphResponseGroupNode
+			if is_instance_valid(inspector):
+				inspector.inspect_response_group(group.group_data, group.response_rows)
+		elif gn is DMGraphConditionGroupNode:
+			var condition_group: DMGraphConditionGroupNode = gn as DMGraphConditionGroupNode
+			if is_instance_valid(inspector):
+				inspector.inspect_condition_group(condition_group.group_data, condition_group.branch_rows)
+		elif gn is DMGraphMatchGroupNode:
+			var match_group: DMGraphMatchGroupNode = gn as DMGraphMatchGroupNode
+			if is_instance_valid(inspector):
+				inspector.inspect_match_group(match_group.group_data, match_group.match_row, match_group.case_rows)
+		elif gn is DMGraphRandomGroupNode:
+			var random_group: DMGraphRandomGroupNode = gn as DMGraphRandomGroupNode
+			if is_instance_valid(inspector):
+				inspector.inspect_random_group(random_group.group_data, random_group.random_rows)
 	elif selected.is_empty() and is_instance_valid(inspector):
 		inspector.clear_inspection()
 

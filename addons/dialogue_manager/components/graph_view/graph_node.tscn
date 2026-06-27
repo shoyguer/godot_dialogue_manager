@@ -3,15 +3,108 @@
 [ext_resource type="Script" path="res://addons/dialogue_manager/components/graph_view/graph_node.gd" id="1"]
 
 [node name="DMGraphNode" type="GraphNode"]
-custom_minimum_size = Vector2(280, 80)
-resizable = true
+custom_minimum_size = Vector2(180, 72)
+resizable = false
 script = ExtResource("1")
-
 [node name="ContentContainer" type="VBoxContainer" parent="."]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 4
+
+[node name="DisplayShell" type="VBoxContainer" parent="ContentContainer"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 4
+
+[node name="DisplayHeaderStrip" type="ColorRect" parent="ContentContainer/DisplayShell"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 6)
+layout_mode = 2
+mouse_filter = 2
+color = Color(0.18, 0.18, 0.2, 0.92)
+
+[node name="DisplayMetaRow" type="HBoxContainer" parent="ContentContainer/DisplayShell"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="DisplayIdLabel" type="Label" parent="ContentContainer/DisplayShell/DisplayMetaRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "node_id"
+
+[node name="DisplayTypeLabel" type="Label" parent="ContentContainer/DisplayShell/DisplayMetaRow"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "DIALOGUE"
+horizontal_alignment = 2
+
+[node name="DisplayCharacterRow" type="HBoxContainer" parent="ContentContainer/DisplayShell"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="DisplaySpeakerNameLabel" type="Label" parent="ContentContainer/DisplayShell/DisplayCharacterRow"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(56, 0)
+text = "Speaker"
+
+[node name="DisplayCharacterLabel" type="Label" parent="ContentContainer/DisplayShell/DisplayCharacterRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+autowrap_mode = 0
+text = "Character"
+
+[node name="DisplayTextRow" type="HBoxContainer" parent="ContentContainer/DisplayShell"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="DisplayTextNameLabel" type="Label" parent="ContentContainer/DisplayShell/DisplayTextRow"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(56, 0)
+text = "Text"
+
+[node name="DisplayBodyLabel" type="Label" parent="ContentContainer/DisplayShell/DisplayTextRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+autowrap_mode = 0
+text = "Dialogue body"
+
+[node name="DisplayExpressionRow" type="HBoxContainer" parent="ContentContainer/DisplayShell"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="DisplayExpressionNameLabel" type="Label" parent="ContentContainer/DisplayShell/DisplayExpressionRow"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(56, 0)
+text = "Expression"
+
+[node name="DisplayExpressionLabel" type="Label" parent="ContentContainer/DisplayShell/DisplayExpressionRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+autowrap_mode = 0
+text = "Expression"
+
+[node name="DisplayBlockingLabel" type="Label" parent="ContentContainer/DisplayShell"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+text = "Blocking (await)"
 
 [node name="HeaderLabel" type="Label" parent="ContentContainer"]
 unique_name_in_owner = true
@@ -81,27 +174,30 @@ layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 4
 
-[node name="GotoTargetLabel" type="Label" parent="ContentContainer/GotoFields"]
+[node name="GotoTargetRow" type="HBoxContainer" parent="ContentContainer/GotoFields"]
 unique_name_in_owner = true
 layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="GotoTargetLabel" type="Label" parent="ContentContainer/GotoFields/GotoTargetRow"]
+unique_name_in_owner = true
+layout_mode = 2
+custom_minimum_size = Vector2(56, 0)
 text = "Section"
 
-[node name="GotoTargetOption" type="OptionButton" parent="ContentContainer/GotoFields"]
+[node name="GotoTargetOption" type="OptionButton" parent="ContentContainer/GotoFields/GotoTargetRow"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 focus_mode = 0
+clip_text = true
+text_overrun_behavior = 3
+alignment = 0
 
 [node name="GotoBottomSpacer" type="Control" parent="ContentContainer/GotoFields"]
 unique_name_in_owner = true
 layout_mode = 2
 custom_minimum_size = Vector2(0, 20)
-
-[node name="TitleOnlyPortAnchor" type="Control" parent="ContentContainer"]
-unique_name_in_owner = true
-visible = false
-layout_mode = 2
-custom_minimum_size = Vector2(0, 10)
 
 [node name="ExpressionEdit" type="LineEdit" parent="ContentContainer"]
 unique_name_in_owner = true

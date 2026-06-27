@@ -100,7 +100,7 @@ static func _enrich_node(node: Dictionary, tree_line: DMTreeLine) -> void:
 		DMConstants.TYPE_RESPONSE:
 			var parts: Dictionary = parse_response_parts(tree_line.text, "")
 			node.condition = parts.get(&"condition", "")
-			node.condition_style = parts.get(&"condition_style", "bracket")
+			node.condition_style = parts.get(&"condition_style", "slash")
 			node.response_options = [{ text = tree_line.text, condition = node.condition, child_ids = node.child_ids }]
 
 		DMConstants.TYPE_RANDOM:
@@ -206,7 +206,7 @@ static func normalize_condition_text(raw: String) -> String:
 	return text
 
 
-static func format_response_line(body: String, condition: String, condition_style: String = "bracket") -> String:
+static func format_response_line(body: String, condition: String, condition_style: String = "slash") -> String:
 	var clean_body: String = body.strip_edges()
 	if condition.strip_edges() == "":
 		return "- %s" % clean_body
