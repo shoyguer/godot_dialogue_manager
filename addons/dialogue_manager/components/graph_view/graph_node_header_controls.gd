@@ -28,7 +28,7 @@ static func attach(node: GraphNode, delete_callback: Callable, title_height: flo
 	delete_button.visible = false
 	delete_button.mouse_filter = Control.MOUSE_FILTER_STOP
 	delete_button.custom_minimum_size = Vector2(DELETE_BUTTON_SIZE, DELETE_BUTTON_SIZE)
-	delete_button.tooltip_text = "Delete node"
+	delete_button.tooltip_text = DMGraphTooltips.NODE_DELETE
 	delete_button.z_index = 4096
 	delete_button.pressed.connect(delete_callback)
 	graph_edit.add_child(delete_button)

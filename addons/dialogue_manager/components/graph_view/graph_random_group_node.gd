@@ -77,7 +77,7 @@ func has_input_port(port: int) -> bool:
 
 
 func _apply_node_title() -> void:
-	DMGraphNodeTheme.apply_title(self, DMGraphNodeTheme.get_accent_for_type(DMConstants.TYPE_RANDOM))
+	DMGraphNodeTheme.apply_title(self, DMGraphNodeTheme.get_accent_for_type(DMConstants.TYPE_RANDOM), true)
 	title = "Random"
 
 
@@ -118,7 +118,11 @@ func _end_row_rebuild() -> void:
 func _wrap_row(row: HBoxContainer, row_index: int) -> PanelContainer:
 	var panel: PanelContainer = PanelContainer.new()
 	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	panel.add_theme_stylebox_override(&"panel", DMGraphNodeTheme.make_row_strip_style(row_index))
+	panel.add_theme_stylebox_override(
+		&"panel",
+		DMGraphNodeTheme.make_plain_row_style() if row_index >= random_rows.size()
+		else DMGraphNodeTheme.make_row_strip_style(row_index)
+	)
 	panel.add_child(row)
 	panel.custom_minimum_size.y = ROW_HEIGHT + 4.0
 	panel.set_meta(&"random_row", row)
@@ -203,6 +207,7 @@ func _create_add_row() -> HBoxContainer:
 	add_button.text = "Add random line"
 	add_button.flat = true
 	add_button.focus_mode = Control.FOCUS_NONE
+	add_button.tooltip_text = DMGraphTooltips.RANDOM_ADD_LINE
 	add_button.pressed.connect(func() -> void: add_line_requested.emit())
 	row.add_child(add_button)
 	return row
@@ -296,4 +301,9 @@ func _update_minimum_size() -> void:
 		var wrapper: Control = get_child(i) as Control
 		if wrapper:
 			total_height += wrapper.custom_minimum_size.y
-	custom_minimum_size = Vector2(max_width + GROUP_HORIZONTAL_PADDING, total_height + 12.0)
+	custom_minimum_size = Vector2(max_width, total_height + 12.0)
+	call_deferred("_deferred_sync_row_widths", max_width)
+
+
+func _deferred_sync_row_widths(width: float) -> void:
+	DMGraphNodeTheme.sync_group_child_widths(self, width)

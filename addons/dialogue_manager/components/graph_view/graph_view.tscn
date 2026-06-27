@@ -22,16 +22,21 @@ layout_mode = 2
 unique_name_in_owner = true
 layout_mode = 2
 
-[node name="HSplit" type="HSplitContainer" parent="."]
+[node name="MainSplit" type="VSplitContainer" parent="."]
+layout_mode = 2
+size_flags_vertical = 3
+split_offset = 280
+
+[node name="TopSplit" type="HSplitContainer" parent="MainSplit"]
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="GraphColumn" type="VBoxContainer" parent="HSplit"]
+[node name="GraphColumn" type="VBoxContainer" parent="MainSplit/TopSplit"]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 
-[node name="GraphEdit" type="GraphEdit" parent="HSplit/GraphColumn"]
+[node name="GraphEdit" type="GraphEdit" parent="MainSplit/TopSplit/GraphColumn"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
@@ -39,57 +44,58 @@ size_flags_vertical = 3
 right_disconnects = true
 script = ExtResource("4")
 
-[node name="ConnectionStatus" type="Label" parent="HSplit/GraphColumn"]
+[node name="ConnectionStatus" type="Label" parent="MainSplit/TopSplit/GraphColumn"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_colors/font_color = Color(0.65, 0.78, 0.98, 1)
 theme_override_font_sizes/font_size = 12
 text = ""
 
-[node name="RightPanel" type="VBoxContainer" parent="HSplit"]
+[node name="RightPanel" type="VBoxContainer" parent="MainSplit/TopSplit"]
 custom_minimum_size = Vector2(220, 0)
 layout_mode = 2
 
-[node name="FileInspector" type="PanelContainer" parent="HSplit/RightPanel"]
+[node name="FileInspector" type="PanelContainer" parent="MainSplit/TopSplit/RightPanel"]
 unique_name_in_owner = true
 layout_mode = 2
 
-[node name="FileMargin" type="MarginContainer" parent="HSplit/RightPanel/FileInspector"]
+[node name="FileMargin" type="MarginContainer" parent="MainSplit/TopSplit/RightPanel/FileInspector"]
 layout_mode = 2
 theme_override_constants/margin_left = 8
 theme_override_constants/margin_top = 4
 theme_override_constants/margin_right = 8
 theme_override_constants/margin_bottom = 4
 
-[node name="FileVBox" type="VBoxContainer" parent="HSplit/RightPanel/FileInspector/FileMargin"]
+[node name="FileVBox" type="VBoxContainer" parent="MainSplit/TopSplit/RightPanel/FileInspector/FileMargin"]
 layout_mode = 2
 
-[node name="FileLabel" type="Label" parent="HSplit/RightPanel/FileInspector/FileMargin/FileVBox"]
+[node name="FileLabel" type="Label" parent="MainSplit/TopSplit/RightPanel/FileInspector/FileMargin/FileVBox"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "File Properties"
 
-[node name="ImportsLabel" type="Label" parent="HSplit/RightPanel/FileInspector/FileMargin/FileVBox"]
+[node name="ImportsLabel" type="Label" parent="MainSplit/TopSplit/RightPanel/FileInspector/FileMargin/FileVBox"]
 layout_mode = 2
 text = "Imports"
 
-[node name="ImportsEdit" type="TextEdit" parent="HSplit/RightPanel/FileInspector/FileMargin/FileVBox"]
+[node name="ImportsEdit" type="TextEdit" parent="MainSplit/TopSplit/RightPanel/FileInspector/FileMargin/FileVBox"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 50)
 layout_mode = 2
 placeholder_text = "import \"res://path.dialogue\" as alias"
 wrap_mode = 1
 
-[node name="UsingLabel" type="Label" parent="HSplit/RightPanel/FileInspector/FileMargin/FileVBox"]
+[node name="UsingLabel" type="Label" parent="MainSplit/TopSplit/RightPanel/FileInspector/FileMargin/FileVBox"]
 layout_mode = 2
 text = "Using (comma-separated)"
 
-[node name="UsingEdit" type="LineEdit" parent="HSplit/RightPanel/FileInspector/FileMargin/FileVBox"]
+[node name="UsingEdit" type="LineEdit" parent="MainSplit/TopSplit/RightPanel/FileInspector/FileMargin/FileVBox"]
 unique_name_in_owner = true
 layout_mode = 2
 placeholder_text = "SomeAutoload"
 
-[node name="Inspector" parent="HSplit/RightPanel" instance=ExtResource("3")]
+[node name="Inspector" parent="MainSplit" instance=ExtResource("3")]
 unique_name_in_owner = true
 layout_mode = 2
+custom_minimum_size = Vector2(0, 240)
 size_flags_vertical = 3

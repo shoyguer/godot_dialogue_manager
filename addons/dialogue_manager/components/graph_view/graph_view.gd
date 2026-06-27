@@ -126,6 +126,8 @@ func _ready() -> void:
 
 		using_edit.text_changed.connect(_on_file_inspector_changed.unbind(1))
 
+	_setup_graph_tooltips()
+
 
 
 	graph_edit.gui_input.connect(_on_graph_gui_input)
@@ -143,11 +145,13 @@ func _ready() -> void:
 
 	_graph_context_menu = PopupMenu.new()
 	_graph_context_menu.id_pressed.connect(_on_graph_context_menu_id_pressed)
-	add_child(_graph_context_menu)
+	DMGraphNodeTheme.apply_popup_menu(_graph_context_menu)
+	graph_edit.add_child(_graph_context_menu)
 
 	_node_context_menu = PopupMenu.new()
 	_node_context_menu.id_pressed.connect(_on_node_context_menu_id_pressed)
-	add_child(_node_context_menu)
+	DMGraphNodeTheme.apply_popup_menu(_node_context_menu)
+	graph_edit.add_child(_node_context_menu)
 
 	_delete_confirm_dialog = ConfirmationDialog.new()
 	_delete_confirm_dialog.title = "Delete node"
@@ -783,6 +787,11 @@ func _create_response_group_node(responses: Array[Dictionary]) -> DMGraphRespons
 	var node_position: Vector2 = responses[0].get("position", Vector2.ZERO)
 	group_node.content_changed.connect(_on_response_group_changed.bind(group_node))
 	group_node.add_response_requested.connect(_on_response_group_add_requested.bind(group_node))
+	group_node.delete_response_requested.connect(_on_response_group_delete_requested.bind(group_node))
+	group_node.response_row_edit_requested.connect(
+		func(response_id: String, grab_focus: bool) -> void:
+			_on_response_row_edit_requested(group_node, response_id, grab_focus)
+	)
 	group_node.group_rebuilt.connect(_on_response_group_rebuilt.bind(group_node))
 	graph_edit.add_child(group_node)
 	group_node.setup_group(responses, node_position)
@@ -1774,16 +1783,68 @@ func _on_response_group_add_requested(group_node: DMGraphResponseGroupNode) -> v
 
 	group_node.response_rows.append(new_response)
 	group_node.setup_group(group_node.response_rows, group_node.position_offset)
-	_response_port_map.clear()
+	_rebuild_response_port_map(group_node)
+	call_deferred("_refresh_graph_connections")
+	document_changed.emit()
+	_commit_immediate_undo("Add response")
+
+
+func _on_response_group_delete_requested(group_node: DMGraphResponseGroupNode, response_id: String) -> void:
+	if _is_updating:
+		return
+	if response_id == "":
+		return
+
+	_begin_immediate_undo()
+
+	document.connections = document.connections.filter(func(c: Dictionary) -> bool:
+		return c.from_node != response_id and c.to_node != response_id
+	)
+	if _full_document != null:
+		_full_document.connections = _full_document.connections.filter(func(c: Dictionary) -> bool:
+			return c.from_node != response_id and c.to_node != response_id
+		)
+
+	_response_port_map.erase(response_id)
+	_remove_document_node(response_id)
+
+	var remaining: Array[Dictionary] = []
+	for row: Dictionary in group_node.response_rows:
+		if row.id != response_id:
+			remaining.append(row)
+	group_node.response_rows = remaining
+	group_node.setup_group(group_node.response_rows, group_node.position_offset)
+	_rebuild_response_port_map(group_node)
+
+	if is_instance_valid(inspector) and inspector.is_inspecting_response_group():
+		if inspector.current_node_data.get("id", "") == group_node.get_group_id():
+			inspector.inspect_response_group(group_node.group_data, group_node.response_rows)
+
+	call_deferred("_refresh_graph_connections")
+	document_changed.emit()
+	_commit_immediate_undo("Delete response")
+
+
+func _on_response_row_edit_requested(group_node: DMGraphResponseGroupNode, response_id: String, grab_focus: bool) -> void:
+	if _is_updating or response_id == "":
+		return
+	_clear_response_row_selections_except(group_node)
+	graph_edit.clear_graph_selection()
+	group_node.selected = false
+	group_node.set_active_response_id(response_id)
+	if is_instance_valid(inspector):
+		inspector.inspect_response_group(group_node.group_data, group_node.response_rows, response_id, grab_focus)
+
+
+func _rebuild_response_port_map(group_node: DMGraphResponseGroupNode) -> void:
+	for row_id: String in group_node.get_response_ids():
+		_response_port_map.erase(row_id)
 	for i: int in range(0, group_node.response_rows.size()):
 		_response_port_map[group_node.response_rows[i].id] = {
 			group_id = group_node.get_group_id(),
 			port = i,
 		}
 	_graph_nodes[group_node.get_group_id()] = group_node
-	call_deferred("_refresh_graph_connections")
-	document_changed.emit()
-	_commit_immediate_undo("Add response")
 
 
 func _on_response_group_rebuilt(_group_node: DMGraphResponseGroupNode) -> void:
@@ -2170,6 +2231,15 @@ func _on_insert_requested(text: String) -> void:
 
 
 
+func _setup_graph_tooltips() -> void:
+	if is_instance_valid(graph_edit):
+		graph_edit.tooltip_text = DMGraphTooltips.GRAPH_CANVAS
+	if is_instance_valid(imports_edit):
+		imports_edit.tooltip_text = DMGraphTooltips.FILE_IMPORTS
+	if is_instance_valid(using_edit):
+		using_edit.tooltip_text = DMGraphTooltips.FILE_USING
+
+
 func _on_graph_gui_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode == KEY_DELETE or event.keycode == KEY_BACKSPACE:
@@ -2180,6 +2250,9 @@ func _on_graph_gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		if event.pressed:
 			_mouse_press_undo_before = _capture_undo_state()
+			var mouse: InputEventMouseButton = event as InputEventMouseButton
+			if not graph_edit.get_graph_node_at_local_point(mouse.position):
+				_clear_response_row_selections()
 			call_deferred("_check_selection")
 		else:
 			_try_commit_position_undo()
@@ -2213,7 +2286,7 @@ func _show_node_context_menu(graph_node: GraphNode, at_position: Vector2) -> voi
 
 func _popup_menu_at_graph_point(menu: PopupMenu, _at_position: Vector2) -> void:
 	menu.reset_size()
-	menu.global_position = graph_edit.get_global_mouse_position()
+	menu.position = DisplayServer.mouse_get_position()
 	menu.popup()
 
 
@@ -2244,8 +2317,9 @@ func _check_selection() -> void:
 			_select_node_data((gn as DMGraphCompactNode).get_data())
 		elif gn is DMGraphResponseGroupNode:
 			var group: DMGraphResponseGroupNode = gn as DMGraphResponseGroupNode
+			group.set_active_response_id("")
 			if is_instance_valid(inspector):
-				inspector.inspect_response_group(group.group_data, group.response_rows)
+				inspector.inspect_response_group(group.group_data, group.response_rows, "")
 		elif gn is DMGraphConditionGroupNode:
 			var condition_group: DMGraphConditionGroupNode = gn as DMGraphConditionGroupNode
 			if is_instance_valid(inspector):
@@ -2259,7 +2333,29 @@ func _check_selection() -> void:
 			if is_instance_valid(inspector):
 				inspector.inspect_random_group(random_group.group_data, random_group.random_rows)
 	elif selected.is_empty() and is_instance_valid(inspector):
+		if _get_response_group_with_active_row() != null and inspector.is_inspecting_response_group():
+			return
+		_clear_response_row_selections()
 		inspector.clear_inspection()
+
+
+func _get_response_group_with_active_row() -> DMGraphResponseGroupNode:
+	for child: Node in graph_edit.get_children():
+		if child is DMGraphResponseGroupNode:
+			var group: DMGraphResponseGroupNode = child as DMGraphResponseGroupNode
+			if group.get_active_response_id() != "":
+				return group
+	return null
+
+
+func _clear_response_row_selections() -> void:
+	_clear_response_row_selections_except(null)
+
+
+func _clear_response_row_selections_except(except: DMGraphResponseGroupNode) -> void:
+	for child: Node in graph_edit.get_children():
+		if child is DMGraphResponseGroupNode and child != except:
+			(child as DMGraphResponseGroupNode).set_active_response_id("")
 
 
 func undo() -> void:

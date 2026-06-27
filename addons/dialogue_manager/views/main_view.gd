@@ -183,15 +183,15 @@ func _unhandled_input(event: InputEvent) -> void:
 
 	if event is InputEventKey and event.is_pressed():
 		if active_editor_tab == "graph" and graph_view.visible:
-			if event.keycode == KEY_Z and event.ctrl_or_cmd_pressed() and not event.shift_pressed:
+			if event.keycode == KEY_Z and DMPlugin.is_ctrl_or_cmd_pressed(event) and not event.shift_pressed:
 				get_viewport().set_input_as_handled()
 				graph_view.undo()
 				return
-			if event.ctrl_or_cmd_pressed() and (event.keycode == KEY_Y or (event.keycode == KEY_Z and event.shift_pressed)):
+			if DMPlugin.is_ctrl_or_cmd_pressed(event) and (event.keycode == KEY_Y or (event.keycode == KEY_Z and event.shift_pressed)):
 				get_viewport().set_input_as_handled()
 				graph_view.redo()
 				return
-			if (event.keycode == KEY_DELETE or event.keycode == KEY_BACKSPACE) and not event.ctrl_or_cmd_pressed():
+			if (event.keycode == KEY_DELETE or event.keycode == KEY_BACKSPACE) and not DMPlugin.is_ctrl_or_cmd_pressed(event):
 				if not graph_view.is_editing_text():
 					get_viewport().set_input_as_handled()
 					graph_view.request_delete_selected_nodes()

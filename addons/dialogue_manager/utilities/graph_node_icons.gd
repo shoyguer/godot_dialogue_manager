@@ -8,16 +8,16 @@ const ICON_DIR: String = "res://addons/dialogue_manager/assets/graph_nodes/"
 
 ## Menu entries for each addable graph node type.
 const NODE_ENTRIES: Array[Dictionary] = [
-	{ type = DMConstants.TYPE_CUE, label = "Cue", icon = "cue.svg" },
-	{ type = DMConstants.TYPE_DIALOGUE, label = "Dialogue", icon = "dialogue.svg" },
-	{ type = DMConstants.TYPE_RESPONSE, label = "Responses", icon = "response.svg" },
-	{ type = DMConstants.TYPE_CONDITION, label = "Condition", icon = "condition.svg" },
-	{ type = DMConstants.TYPE_WHILE, label = "While", icon = "while.svg" },
-	{ type = DMConstants.TYPE_MATCH, label = "Match", icon = "match.svg" },
-	{ type = DMConstants.TYPE_MUTATION, label = "Mutation", icon = "mutation.svg" },
-	{ type = DMConstants.TYPE_GOTO, label = "Goto", icon = "goto.svg" },
-	{ type = DMConstants.TYPE_END, label = "End", icon = "end.svg" },
-	{ type = DMConstants.TYPE_RANDOM, label = "Random", icon = "random.svg" },
+	{ type = DMConstants.TYPE_CUE, label = "Cue", icon = "cue.svg", tooltip = "Start a new dialogue section (~ cue_name)" },
+	{ type = DMConstants.TYPE_DIALOGUE, label = "Dialogue", icon = "dialogue.svg", tooltip = "A line of dialogue spoken by a character" },
+	{ type = DMConstants.TYPE_RESPONSE, label = "Responses", icon = "response.svg", tooltip = "Player choices — a menu of response options" },
+	{ type = DMConstants.TYPE_CONDITION, label = "Condition", icon = "condition.svg", tooltip = "Branch the flow with if / elif / else" },
+	{ type = DMConstants.TYPE_WHILE, label = "While", icon = "while.svg", tooltip = "Repeat lines while an expression is true" },
+	{ type = DMConstants.TYPE_MATCH, label = "Match", icon = "match.svg", tooltip = "Branch on a value with match / when / else" },
+	{ type = DMConstants.TYPE_MUTATION, label = "Mutation", icon = "mutation.svg", tooltip = "Run a GDScript expression (do, set, etc.)" },
+	{ type = DMConstants.TYPE_GOTO, label = "Goto", icon = "goto.svg", tooltip = "Jump to another cue or snippet" },
+	{ type = DMConstants.TYPE_END, label = "End", icon = "end.svg", tooltip = "End the dialogue here" },
+	{ type = DMConstants.TYPE_RANDOM, label = "Random", icon = "random.svg", tooltip = "Pick one line at random by weight" },
 ]
 
 

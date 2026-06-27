@@ -93,6 +93,8 @@ func _ready() -> void:
 	DMGraphNodeTheme.apply_content_controls(content_container)
 	if is_instance_valid(expand_text_button):
 		expand_text_button.pressed.connect(_on_expand_text_pressed)
+		expand_text_button.tooltip_text = "Open a larger editor for this text"
+	_setup_node_tooltips()
 	if not gui_input.is_connected(_on_graph_node_gui_input):
 		gui_input.connect(_on_graph_node_gui_input)
 	if not _pending_setup_data.is_empty():
@@ -130,6 +132,27 @@ func _style_display_labels() -> void:
 func _style_goto_controls() -> void:
 	if is_instance_valid(goto_target_option):
 		DMGraphNodeTheme.apply_option_button(goto_target_option)
+
+
+func _setup_node_tooltips() -> void:
+	if is_instance_valid(character_edit):
+		character_edit.tooltip_text = DMGraphTooltips.INSPECTOR_CHARACTER
+	if is_instance_valid(text_edit):
+		text_edit.tooltip_text = DMGraphTooltips.INSPECTOR_DIALOGUE
+	if is_instance_valid(notes_edit):
+		notes_edit.tooltip_text = DMGraphTooltips.INSPECTOR_NOTES
+	if is_instance_valid(tags_edit):
+		tags_edit.tooltip_text = DMGraphTooltips.INSPECTOR_TAGS
+	if is_instance_valid(static_id_edit):
+		static_id_edit.tooltip_text = DMGraphTooltips.INSPECTOR_STATIC_ID
+	if is_instance_valid(weight_spin):
+		weight_spin.tooltip_text = DMGraphTooltips.INSPECTOR_RANDOM_WEIGHT
+	if is_instance_valid(blocking_check):
+		blocking_check.tooltip_text = DMGraphTooltips.INSPECTOR_MUTATION_BLOCKING
+	if is_instance_valid(goto_target_option):
+		goto_target_option.tooltip_text = DMGraphTooltips.INSPECTOR_GOTO_TARGET
+	if is_instance_valid(display_body_label):
+		display_body_label.tooltip_text = "Double-click to edit in the properties panel"
 
 
 ## Replaces the scene LineEdit expression field with a syntax highlighted CodeEdit.
@@ -401,7 +424,10 @@ func _refresh_goto_options() -> void:
 		goto_target_option.add_item(current_target)
 	_select_goto_target(current_target)
 	if is_instance_valid(goto_target_option):
+		goto_target_option.clip_text = false
+		goto_target_option.text_overrun_behavior = TextServer.OVERRUN_NO_TRIMMING
 		DMGraphNodeTheme.apply_popup_menu(goto_target_option.get_popup())
+	call_deferred("_resize_node_to_content")
 
 
 func _select_goto_target(target: String) -> void:
@@ -417,6 +443,7 @@ func _select_goto_target(target: String) -> void:
 
 func _on_goto_target_selected(_index: int) -> void:
 	_on_content_changed()
+	call_deferred("_resize_node_to_content")
 
 
 func _apply_bottom_spacer_size(spacer: Control) -> void:
@@ -770,6 +797,8 @@ func _on_graph_node_gui_input(event: InputEvent) -> void:
 	var mouse: InputEventMouseButton = event as InputEventMouseButton
 	if mouse.button_index != MOUSE_BUTTON_LEFT or not mouse.double_click:
 		return
+	mouse.accept_event()
+	DMGraphNodeTheme.register_drag_guard(self)
 
 	var node_type: String = node_data.get("type", "")
 	match node_type:
@@ -783,6 +812,13 @@ func _on_graph_node_gui_input(event: InputEvent) -> void:
 			_open_response_edit_popup()
 
 
+func _configure_edit_popup_close(popup: Window) -> void:
+	popup.close_requested.connect(func() -> void:
+		popup.queue_free()
+		DMGraphNodeTheme.release_drag_guard(self)
+	)
+
+
 func _open_dialogue_edit_popup() -> void:
 	if is_instance_valid(_text_popup):
 		_text_popup.queue_free()
@@ -792,7 +828,7 @@ func _open_dialogue_edit_popup() -> void:
 	_text_popup.unresizable = false
 	_text_popup.size = Vector2i(520, 360)
 	_text_popup.min_size = Vector2i(360, 240)
-	_text_popup.close_requested.connect(_text_popup.queue_free)
+	_configure_edit_popup_close(_text_popup)
 
 	var margin: MarginContainer = MarginContainer.new()
 	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -832,6 +868,7 @@ func _open_dialogue_edit_popup() -> void:
 		_on_content_changed()
 		_refresh_display_from_data()
 		_text_popup.queue_free()
+		DMGraphNodeTheme.release_drag_guard(self)
 	)
 	close_row.add_child(done_button)
 	vbox.add_child(close_row)
@@ -855,7 +892,7 @@ func _open_mutation_edit_popup() -> void:
 	_text_popup.unresizable = false
 	_text_popup.size = Vector2i(520, 240)
 	_text_popup.min_size = Vector2i(360, 160)
-	_text_popup.close_requested.connect(_text_popup.queue_free)
+	_configure_edit_popup_close(_text_popup)
 
 	var margin: MarginContainer = MarginContainer.new()
 	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -894,6 +931,7 @@ func _open_mutation_edit_popup() -> void:
 		_on_content_changed()
 		_refresh_display_from_data()
 		_text_popup.queue_free()
+		DMGraphNodeTheme.release_drag_guard(self)
 	)
 	close_row.add_child(done_button)
 	vbox.add_child(close_row)
@@ -914,7 +952,7 @@ func _open_expression_edit_popup() -> void:
 	_text_popup.unresizable = false
 	_text_popup.size = Vector2i(520, 200)
 	_text_popup.min_size = Vector2i(360, 120)
-	_text_popup.close_requested.connect(_text_popup.queue_free)
+	_configure_edit_popup_close(_text_popup)
 
 	var margin: MarginContainer = MarginContainer.new()
 	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -944,6 +982,7 @@ func _open_expression_edit_popup() -> void:
 		_on_content_changed()
 		_refresh_display_from_data()
 		_text_popup.queue_free()
+		DMGraphNodeTheme.release_drag_guard(self)
 	)
 	close_row.add_child(done_button)
 	vbox.add_child(close_row)
@@ -961,7 +1000,7 @@ func _open_response_edit_popup() -> void:
 	_text_popup.unresizable = false
 	_text_popup.size = Vector2i(480, 200)
 	_text_popup.min_size = Vector2i(320, 120)
-	_text_popup.close_requested.connect(_text_popup.queue_free)
+	_configure_edit_popup_close(_text_popup)
 
 	var margin: MarginContainer = MarginContainer.new()
 	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -1001,6 +1040,7 @@ func _open_response_edit_popup() -> void:
 		_on_content_changed()
 		_refresh_display_from_data()
 		_text_popup.queue_free()
+		DMGraphNodeTheme.release_drag_guard(self)
 	)
 	close_row.add_child(done_button)
 	vbox.add_child(close_row)
@@ -1010,10 +1050,12 @@ func _open_response_edit_popup() -> void:
 
 
 func _on_expand_text_pressed() -> void:
+	DMGraphNodeTheme.register_drag_guard(self)
 	_open_dialogue_edit_popup()
 
 
 func _on_expand_mutation_pressed() -> void:
+	DMGraphNodeTheme.register_drag_guard(self)
 	_open_mutation_edit_popup()
 
 
@@ -1024,14 +1066,17 @@ func _resize_node_to_content() -> void:
 
 	match node_data.get("type", ""):
 		DMConstants.TYPE_GOTO:
-			var goto_width: float = COMPACT_NODE_WIDTH
+			var label_width: float = DMGraphNodeTheme.FIELD_LABEL_WIDTH
+			var option_width: float = DMGraphNodeTheme.measure_option_button_width(goto_target_option)
 			if is_instance_valid(goto_target_option):
-				for i: int in range(0, goto_target_option.item_count):
-					goto_width = maxf(goto_width, float(goto_target_option.get_item_text(i).length()) * 7.5 + 56.0)
+				goto_target_option.custom_minimum_size.x = option_width
+				goto_target_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			var goto_width: float = maxf(COMPACT_NODE_WIDTH, label_width + option_width + 24.0)
 			var goto_height: float = 52.0 + NODE_BOTTOM_MARGIN
 			if is_instance_valid(goto_fields) and goto_fields.visible:
+				goto_fields.custom_minimum_size.x = goto_width
 				goto_height = maxf(goto_height, goto_fields.get_combined_minimum_size().y + 16.0)
-			custom_minimum_size = Vector2(mini(goto_width, 360.0), goto_height)
+			custom_minimum_size = Vector2(goto_width, goto_height)
 			return
 		DMConstants.TYPE_MUTATION:
 			if is_instance_valid(display_shell) and display_shell.visible:

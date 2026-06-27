@@ -181,7 +181,7 @@ Narrator: There's something in the way she speaks. Almost... desperate.
 => cautious_options
 
 ~ cautious_options
-- What happened to your ship? [if not local.cautious_asked_ship_happened]
+- What happened to your ship? [if not local.cautious_asked_ship_happened /]
 	set local.cautious_asked_ship_happened = true
 
 	{{Global.player_name}}: Your ship... what happened to it? Did it really just crash?
@@ -191,7 +191,7 @@ Narrator: There's something in the way she speaks. Almost... desperate.
 	Narrator: She touches her side again, and I can see the blood. That's real. Whatever this is, the injury is real.
 	=> cautious_options
 
-- I can see you're hurt [if not local.cautious_asked_hurt]
+- I can see you're hurt [if not local.cautious_asked_hurt /]
 	set local.cautious_asked_hurt = true
 
 	{{Global.player_name}}: I don't know what you're saying, but I can see you're bleeding. That much is clear.

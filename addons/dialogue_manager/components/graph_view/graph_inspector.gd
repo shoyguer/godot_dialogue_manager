@@ -12,6 +12,7 @@ const KIND_RESPONSE_GROUP: String = "response_group"
 const KIND_CONDITION_GROUP: String = "condition_group"
 const KIND_MATCH_GROUP: String = "match_group"
 const KIND_RANDOM_GROUP: String = "random_group"
+const RESPONSE_CONDITION_HINT: String = "e.g. Global.quest_started or {{some_variable}} > 0"
 
 
 @onready var type_label: Label = %TypeLabel
@@ -23,8 +24,9 @@ const KIND_RANDOM_GROUP: String = "random_group"
 @onready var character_edit: LineEdit = %CharacterEdit
 @onready var dialogue_edit: TextEdit = %DialogueEdit
 @onready var response_section: VBoxContainer = %ResponseSection
-@onready var response_list: VBoxContainer = %ResponseList
+@onready var response_list: HBoxContainer = %ResponseList
 @onready var extra_section: VBoxContainer = %ExtraSection
+@onready var inspector_scroll: ScrollContainer = %Scroll
 
 
 var current_node_data: Dictionary = {}
@@ -42,9 +44,14 @@ var _extra_controls: Dictionary = {}
 var _completion_cue_names: Array[String] = []
 var _completion_autoload_names: PackedStringArray = PackedStringArray([])
 var _suppress_signals: bool = false
+var _focus_response_id: String = ""
+var _display_response_id: String = ""
+var _grab_focus_on_response: bool = false
 
 
 func _ready() -> void:
+	DMGraphNodeTheme.apply_inspector_panel(self)
+	_setup_tooltips()
 	_setup_insert_menu()
 	if is_instance_valid(notes_edit):
 		notes_edit.text_changed.connect(_on_property_changed)
@@ -115,19 +122,30 @@ func inspect(node_data: Dictionary) -> void:
 		tags_edit.text = ", ".join(node_data.get("tags", []))
 
 	_update_type_sections(node_data)
+	_set_metadata_fields_visible(true)
 	_suppress_signals = false
 	show()
 
 
-func inspect_response_group(group_data: Dictionary, rows: Array[Dictionary]) -> void:
+func inspect_response_group(group_data: Dictionary, rows: Array[Dictionary], focus_response_id: String = "", grab_focus: bool = false) -> void:
 	_reset_inspection(KIND_RESPONSE_GROUP)
 	current_node_data = group_data
 	_response_rows = rows.duplicate(true)
+	_focus_response_id = focus_response_id
+	_display_response_id = focus_response_id
+	_grab_focus_on_response = grab_focus
 	_suppress_signals = true
 
 	if is_instance_valid(type_label):
-		type_label.text = "Responses"
+		if focus_response_id != "":
+			for i: int in range(0, rows.size()):
+				if rows[i].get("id", "") == focus_response_id:
+					type_label.text = "Response %d" % (i + 1)
+					break
+		else:
+			type_label.text = "Responses"
 	_clear_metadata_fields()
+	_set_metadata_fields_visible(false)
 	_hide_type_sections()
 	if is_instance_valid(response_section):
 		response_section.show()
@@ -135,6 +153,10 @@ func inspect_response_group(group_data: Dictionary, rows: Array[Dictionary]) -> 
 
 	_suppress_signals = false
 	show()
+	if _focus_response_id != "":
+		call_deferred("_focus_response_editor", _focus_response_id, _grab_focus_on_response)
+		_focus_response_id = ""
+		_grab_focus_on_response = false
 
 
 func inspect_condition_group(group_data: Dictionary, branches: Array[Dictionary]) -> void:
@@ -146,6 +168,7 @@ func inspect_condition_group(group_data: Dictionary, branches: Array[Dictionary]
 	if is_instance_valid(type_label):
 		type_label.text = "Condition"
 	_clear_metadata_fields()
+	_set_metadata_fields_visible(false)
 	_hide_type_sections()
 	_build_condition_editors()
 
@@ -163,6 +186,7 @@ func inspect_match_group(group_data: Dictionary, match_data: Dictionary, cases: 
 	if is_instance_valid(type_label):
 		type_label.text = "Match"
 	_clear_metadata_fields()
+	_set_metadata_fields_visible(false)
 	_hide_type_sections()
 	_build_match_editors()
 
@@ -179,6 +203,7 @@ func inspect_random_group(group_data: Dictionary, rows: Array[Dictionary]) -> vo
 	if is_instance_valid(type_label):
 		type_label.text = "Random"
 	_clear_metadata_fields()
+	_set_metadata_fields_visible(false)
 	_hide_type_sections()
 	_build_random_editors()
 
@@ -195,6 +220,8 @@ func _reset_inspection(kind: String) -> void:
 	_inspection_kind = kind
 	current_node_data = {}
 	_response_rows = []
+	_display_response_id = ""
+	_focus_response_id = ""
 	_condition_rows = []
 	_match_row = {}
 	_match_cases = []
@@ -429,27 +456,28 @@ func _build_response_updates(rows: Array[Dictionary], editors_list: Array[Dictio
 		return []
 
 	var updates: Array[Dictionary] = rows.duplicate(true)
-	for i: int in range(0, editors_list.size()):
-		if i >= updates.size():
-			break
-		var editors: Dictionary = editors_list[i]
-		var text_edit: TextEdit = editors.get("text_edit") as TextEdit
-		var condition_edit: LineEdit = editors.get("condition_edit") as LineEdit
+	for editor: Dictionary in editors_list:
+		var response_id: String = editor.get("response_id", "")
+		if response_id == "":
+			continue
+		var text_edit: TextEdit = editor.get("text_edit") as TextEdit
+		var condition_edit: DMGraphExpressionField = editor.get("condition_edit") as DMGraphExpressionField
 		if not is_instance_valid(text_edit):
 			continue
-
 		var body: String = text_edit.text.strip_edges()
 		var condition: String = ""
 		if is_instance_valid(condition_edit):
 			condition = DMGraphTreeBuilder.normalize_condition_text(condition_edit.text)
-
-		var row: Dictionary = updates[i]
-		row.condition = condition
-		if condition != "":
-			row.condition_style = "slash"
-			row.text = DMGraphTreeBuilder.format_response_line(body, condition, "slash")
-		else:
-			row.text = "- %s" % body
+		for i: int in range(0, updates.size()):
+			if updates[i].get("id", "") != response_id:
+				continue
+			updates[i].condition = condition
+			if condition != "":
+				updates[i].condition_style = "slash"
+				updates[i].text = DMGraphTreeBuilder.format_response_line(body, condition, "slash")
+			else:
+				updates[i].text = "- %s" % body
+			break
 	return updates
 
 
@@ -500,6 +528,7 @@ func _build_concurrent_editor(node_data: Dictionary) -> void:
 	var concurrent_edit: TextEdit = TextEdit.new()
 	concurrent_edit.custom_minimum_size = Vector2(0, 56)
 	concurrent_edit.placeholder_text = "| Character: concurrent line"
+	concurrent_edit.tooltip_text = DMGraphTooltips.INSPECTOR_CONCURRENT
 	var lines: PackedStringArray = node_data.get("concurrent_lines", PackedStringArray([]))
 	var line_text: String = ""
 	for line: String in lines:
@@ -517,6 +546,7 @@ func _build_cue_editor(node_data: Dictionary) -> void:
 	extra_section.show()
 	var cue_edit: LineEdit = LineEdit.new()
 	cue_edit.placeholder_text = "Cue name"
+	cue_edit.tooltip_text = DMGraphTooltips.INSPECTOR_CUE_NAME
 	cue_edit.text = node_data.get("cue_name", "")
 	cue_edit.text_changed.connect(_on_property_changed.unbind(1))
 	DMGraphNodeTheme.apply_field_background(cue_edit)
@@ -532,11 +562,13 @@ func _build_mutation_editor(node_data: Dictionary) -> void:
 		node_data.get("expression", node_data.get("text", "")),
 		DMConstants.TYPE_MUTATION
 	)
+	expr_edit.tooltip_text = DMGraphTooltips.INSPECTOR_MUTATION
 	extra_section.add_child(expr_edit)
 	_extra_controls["expression_edit"] = expr_edit
 
 	var blocking_check: CheckBox = CheckBox.new()
 	blocking_check.text = "Blocking (do / set)"
+	blocking_check.tooltip_text = DMGraphTooltips.INSPECTOR_MUTATION_BLOCKING
 	blocking_check.button_pressed = node_data.get("mutation_blocking", true)
 	blocking_check.toggled.connect(_on_property_changed.unbind(1))
 	extra_section.add_child(blocking_check)
@@ -551,6 +583,10 @@ func _build_expression_editor(node_data: Dictionary, node_type: String) -> void:
 	if node_type == DMConstants.TYPE_MATCH and expression.begins_with("match "):
 		expression = expression.substr(6).strip_edges()
 	var expr_edit: DMGraphExpressionField = _make_expression_field(expression, node_type)
+	if node_type == DMConstants.TYPE_WHILE:
+		expr_edit.tooltip_text = DMGraphTooltips.INSPECTOR_CONDITION_BRANCH
+	elif node_type == DMConstants.TYPE_MATCH:
+		expr_edit.tooltip_text = DMGraphTooltips.INSPECTOR_MATCH_EXPRESSION
 	extra_section.add_child(expr_edit)
 	_extra_controls["expression_edit"] = expr_edit
 
@@ -561,6 +597,7 @@ func _build_goto_editor(node_data: Dictionary) -> void:
 	extra_section.show()
 	var target_edit: LineEdit = LineEdit.new()
 	target_edit.placeholder_text = "Target cue"
+	target_edit.tooltip_text = DMGraphTooltips.INSPECTOR_GOTO_TARGET
 	target_edit.text = node_data.get("goto_target", "")
 	target_edit.text_changed.connect(_on_property_changed.unbind(1))
 	DMGraphNodeTheme.apply_field_background(target_edit)
@@ -569,6 +606,7 @@ func _build_goto_editor(node_data: Dictionary) -> void:
 
 	var snippet_check: CheckBox = CheckBox.new()
 	snippet_check.text = "Snippet (=><)"
+	snippet_check.tooltip_text = DMGraphTooltips.INSPECTOR_GOTO_SNIPPET
 	snippet_check.button_pressed = node_data.get("is_snippet", false)
 	snippet_check.toggled.connect(_on_property_changed.unbind(1))
 	extra_section.add_child(snippet_check)
@@ -596,12 +634,14 @@ func _build_random_node_editor(node_data: Dictionary) -> void:
 	weight_spin.max_value = 100
 	weight_spin.value = weight
 	weight_spin.value_changed.connect(_on_property_changed.unbind(1))
+	weight_spin.tooltip_text = DMGraphTooltips.INSPECTOR_RANDOM_WEIGHT
 	extra_section.add_child(weight_spin)
 	_extra_controls["random_weight_spin"] = weight_spin
 
 	var text_edit: TextEdit = TextEdit.new()
 	text_edit.custom_minimum_size = Vector2(0, 48)
 	text_edit.text = body
+	text_edit.tooltip_text = DMGraphTooltips.INSPECTOR_RANDOM_TEXT
 	text_edit.text_changed.connect(_on_property_changed)
 	DMGraphNodeTheme.apply_field_background(text_edit)
 	extra_section.add_child(text_edit)
@@ -639,6 +679,9 @@ func _build_condition_editors() -> void:
 		if branch_type == "else":
 			expr_edit.editable = false
 			expr_edit.text = ""
+			expr_edit.tooltip_text = DMGraphTooltips.INSPECTOR_MATCH_ELSE
+		else:
+			expr_edit.tooltip_text = DMGraphTooltips.INSPECTOR_CONDITION_BRANCH
 		row_box.add_child(expr_edit)
 		extra_section.add_child(row_box)
 		_condition_editors.append({ "expression_edit": expr_edit })
@@ -659,6 +702,7 @@ func _build_match_editors() -> void:
 	if match_expression.begins_with("match "):
 		match_expression = match_expression.substr(6).strip_edges()
 	var match_expr_edit: DMGraphExpressionField = _make_expression_field(match_expression, DMConstants.TYPE_MATCH)
+	match_expr_edit.tooltip_text = DMGraphTooltips.INSPECTOR_MATCH_EXPRESSION
 	match_box.add_child(match_expr_edit)
 	extra_section.add_child(match_box)
 	_match_editors.append({ "expression_edit": match_expr_edit })
@@ -676,6 +720,9 @@ func _build_match_editors() -> void:
 		if case_type == "else":
 			expr_edit.editable = false
 			expr_edit.text = ""
+			expr_edit.tooltip_text = DMGraphTooltips.INSPECTOR_MATCH_ELSE
+		else:
+			expr_edit.tooltip_text = DMGraphTooltips.INSPECTOR_MATCH_WHEN
 		case_box.add_child(expr_edit)
 		extra_section.add_child(case_box)
 		_match_editors.append({ "expression_edit": expr_edit })
@@ -748,6 +795,15 @@ func _clear_metadata_fields() -> void:
 		tags_edit.text = ""
 
 
+func _set_metadata_fields_visible(visible: bool) -> void:
+	if is_instance_valid(static_id_edit):
+		static_id_edit.visible = visible
+	if is_instance_valid(tags_edit):
+		tags_edit.visible = visible
+	if is_instance_valid(notes_edit):
+		notes_edit.visible = visible
+
+
 func _clear_extra_controls() -> void:
 	_extra_controls.clear()
 	if not is_instance_valid(extra_section):
@@ -783,39 +839,91 @@ func _build_response_editors() -> void:
 
 	for i: int in range(0, _response_rows.size()):
 		var row_data: Dictionary = _response_rows[i]
+		var row_id: String = row_data.get("id", "")
+		if _display_response_id != "" and row_id != _display_response_id:
+			continue
 		var parsed: Dictionary = DMGraphTreeBuilder.parse_response_parts(
 			row_data.get("text", ""),
 			row_data.get("condition", "")
 		)
 
 		var row_box: VBoxContainer = VBoxContainer.new()
-		row_box.add_theme_constant_override(&"separation", 2)
+		row_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row_box.custom_minimum_size = Vector2(240, 0)
+		row_box.add_theme_constant_override(&"separation", 4)
 
 		var header: Label = Label.new()
 		header.text = "Response %d" % (i + 1)
 		DMGraphNodeTheme.apply_muted_label(header)
 		row_box.add_child(header)
 
+		var text_label: Label = Label.new()
+		text_label.text = "Option text"
+		text_label.tooltip_text = DMGraphTooltips.INSPECTOR_RESPONSE_TEXT
+		DMGraphNodeTheme.apply_field_name_label(text_label)
+		row_box.add_child(text_label)
+
 		var text_edit: TextEdit = TextEdit.new()
-		text_edit.custom_minimum_size = Vector2(0, 48)
+		text_edit.custom_minimum_size = Vector2(0, 80 if _display_response_id != "" else 56)
 		text_edit.text = parsed.get("text", "")
+		text_edit.tooltip_text = DMGraphTooltips.INSPECTOR_RESPONSE_TEXT
 		text_edit.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
 		text_edit.text_changed.connect(_on_property_changed)
 		DMGraphNodeTheme.apply_field_background(text_edit)
 		row_box.add_child(text_edit)
 
-		var condition_edit: LineEdit = LineEdit.new()
-		condition_edit.placeholder_text = "Visibility [if expr /]"
-		condition_edit.text = DMGraphTreeBuilder.normalize_condition_text(parsed.get("condition", ""))
-		condition_edit.text_changed.connect(_on_property_changed.unbind(1))
-		DMGraphNodeTheme.apply_field_background(condition_edit)
+		var condition_label: Label = Label.new()
+		condition_label.text = "Visible when (optional)"
+		condition_label.tooltip_text = DMGraphTooltips.INSPECTOR_RESPONSE_CONDITION
+		DMGraphNodeTheme.apply_field_name_label(condition_label)
+		row_box.add_child(condition_label)
+
+		var condition_edit: DMGraphExpressionField = _make_expression_field(
+			DMGraphTreeBuilder.normalize_condition_text(parsed.get("condition", "")),
+			DMConstants.TYPE_CONDITION
+		)
+		condition_edit.placeholder_text = RESPONSE_CONDITION_HINT
+		condition_edit.tooltip_text = DMGraphTooltips.INSPECTOR_RESPONSE_CONDITION
 		row_box.add_child(condition_edit)
 
 		response_list.add_child(row_box)
 		_response_editors.append({
+			"response_id": row_data.get("id", ""),
+			"row_box": row_box,
 			"text_edit": text_edit,
 			"condition_edit": condition_edit,
 		})
+
+
+func _focus_response_editor(response_id: String, grab_focus: bool = false) -> void:
+	for editor: Dictionary in _response_editors:
+		if editor.get("response_id", "") != response_id:
+			continue
+		var text_edit: TextEdit = editor.get("text_edit") as TextEdit
+		var row_box: Control = editor.get("row_box") as Control
+		if is_instance_valid(row_box) and is_instance_valid(inspector_scroll):
+			inspector_scroll.ensure_control_visible(row_box)
+		if grab_focus and is_instance_valid(text_edit):
+			text_edit.grab_focus()
+			text_edit.select_all()
+		break
+
+
+func _setup_tooltips() -> void:
+	if is_instance_valid(type_label):
+		type_label.tooltip_text = DMGraphTooltips.INSPECTOR_TYPE
+	if is_instance_valid(insert_menu):
+		insert_menu.tooltip_text = DMGraphTooltips.INSPECTOR_INSERT
+	if is_instance_valid(character_edit):
+		character_edit.tooltip_text = DMGraphTooltips.INSPECTOR_CHARACTER
+	if is_instance_valid(dialogue_edit):
+		dialogue_edit.tooltip_text = DMGraphTooltips.INSPECTOR_DIALOGUE
+	if is_instance_valid(static_id_edit):
+		static_id_edit.tooltip_text = DMGraphTooltips.INSPECTOR_STATIC_ID
+	if is_instance_valid(tags_edit):
+		tags_edit.tooltip_text = DMGraphTooltips.INSPECTOR_TAGS
+	if is_instance_valid(notes_edit):
+		notes_edit.tooltip_text = DMGraphTooltips.INSPECTOR_NOTES
 
 
 func _on_property_changed(_arg: Variant = null) -> void:

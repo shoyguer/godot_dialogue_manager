@@ -307,6 +307,11 @@ static func _create_event(string: String) -> InputEventKey:
 	return event
 
 
+## Returns whether Ctrl (Windows/Linux) or Cmd (macOS) is held for this key event.
+static func is_ctrl_or_cmd_pressed(event: InputEventKey) -> bool:
+	return event.ctrl_pressed or event.meta_pressed
+
+
 ## Get the editor shortcut that matches an event
 static func get_editor_shortcut(event: InputEventKey) -> String:
 	var shortcuts: Dictionary = get_editor_shortcuts()

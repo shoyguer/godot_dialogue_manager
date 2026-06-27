@@ -24,7 +24,7 @@ var _is_rebuilding: bool = false
 func _ready() -> void:
 	resizable = true
 	var accent: Color = DMGraphNodeTheme.get_accent_for_type(DMConstants.TYPE_CONDITION)
-	DMGraphNodeTheme.apply_title(self, accent)
+	DMGraphNodeTheme.apply_title(self, accent, true)
 	title = "Condition"
 
 
@@ -52,7 +52,7 @@ func setup_group(branches: Array[Dictionary], node_position: Vector2 = Vector2.Z
 	name = group_data.id
 	position_offset = node_position
 	var accent: Color = DMGraphNodeTheme.get_accent_for_type(DMConstants.TYPE_CONDITION)
-	DMGraphNodeTheme.apply_title(self, accent)
+	DMGraphNodeTheme.apply_title(self, accent, true)
 	title = "Condition"
 
 	if is_node_ready() and is_inside_tree():
@@ -269,6 +269,7 @@ func _create_actions_row() -> HBoxContainer:
 	add_elif_button.text = "Add elif"
 	add_elif_button.focus_mode = Control.FOCUS_NONE
 	add_elif_button.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	add_elif_button.tooltip_text = DMGraphTooltips.CONDITION_ADD_ELIF
 	add_elif_button.pressed.connect(_on_add_elif_pressed)
 	call_deferred("_apply_add_icon", add_elif_button)
 	row.add_child(add_elif_button)
@@ -278,6 +279,7 @@ func _create_actions_row() -> HBoxContainer:
 		add_else_button.text = "Add else"
 		add_else_button.focus_mode = Control.FOCUS_NONE
 		add_else_button.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		add_else_button.tooltip_text = DMGraphTooltips.CONDITION_ADD_ELSE
 		add_else_button.pressed.connect(_on_add_else_pressed)
 		call_deferred("_apply_add_icon", add_else_button)
 		row.add_child(add_else_button)
@@ -348,4 +350,10 @@ func _update_minimum_size(content_width: float = 300.0) -> void:
 			if row and row.name != "ActionsRow":
 				total_height += maxf(28.0, row.custom_minimum_size.y) + float(ROW_SEPARATION)
 	total_height += 36.0
-	custom_minimum_size = Vector2(maxf(280.0, content_width + PREFIX_WIDTH + 16.0), total_height + DMGraphNodeTheme.NODE_BOTTOM_MARGIN)
+	var node_width: float = maxf(280.0, content_width + PREFIX_WIDTH + 16.0)
+	custom_minimum_size = Vector2(node_width, total_height + DMGraphNodeTheme.NODE_BOTTOM_MARGIN)
+	call_deferred("_deferred_sync_row_widths", node_width)
+
+
+func _deferred_sync_row_widths(width: float) -> void:
+	DMGraphNodeTheme.sync_group_child_widths(self, width)

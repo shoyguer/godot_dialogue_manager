@@ -8,6 +8,9 @@ const DISPLAY_FONT_SIZE: int = 13
 const LABEL_MUTED_COLOR: Color = Color(0.52, 0.52, 0.56, 1.0)
 const FIELD_BG_COLOR: Color = Color(0.08, 0.08, 0.1, 1.0)
 const BODY_FILL_COLOR: Color = Color(0.08, 0.07, 0.06, 1.0)
+const POPUP_MENU_BG_COLOR: Color = Color(0.19, 0.19, 0.23, 1.0)
+const POPUP_MENU_BORDER_COLOR: Color = Color(0.40, 0.40, 0.46, 1.0)
+const POPUP_MENU_HOVER_COLOR: Color = Color(0.26, 0.26, 0.31, 1.0)
 const HEADER_STRIP_COLOR: Color = Color(0.18, 0.18, 0.2, 0.92)
 const HEADER_STRIP_HEIGHT: float = 6.0
 const META_ID_COLOR: Color = Color(0.92, 0.9, 0.86, 1.0)
@@ -33,8 +36,13 @@ const COMPACT_LIGHTEN_AMOUNT: float = 0.10
 const PANEL_BORDER_COLOR: Color = Color(0.28, 0.28, 0.32, 1.0)
 const FIELD_LABEL_WIDTH: float = 56.0
 
-const ROW_STRIP_COLOR_A: Color = Color(0.07, 0.06, 0.05, 1.0)
-const ROW_STRIP_COLOR_B: Color = Color(0.17, 0.16, 0.15, 1.0)
+const ROW_STRIP_COLOR_A: Color = Color(0, 0, 0, 0)
+const ROW_STRIP_COLOR_B: Color = Color(0.11, 0.10, 0.095, 1.0)
+const ROW_HOVER_COLOR: Color = Color(0.16, 0.15, 0.14, 1.0)
+const ROW_SELECTED_COLOR: Color = Color(0.19, 0.17, 0.15, 1.0)
+const ROW_INNER_PADDING: int = 8
+const ROW_DELETE_BUTTON_WIDTH: float = 28.0
+const TITLE_SATURATION_BOOST: float = 1.22
 const RESPONSE_NUMBER_WIDTH: float = 28.0
 const RESPONSE_NUMBER_COLOR: Color = Color(0.42, 0.42, 0.46, 1.0)
 const PORT_COLOR: Color = Color(0.55, 0.58, 0.65, 1.0)
@@ -81,32 +89,185 @@ static func get_row_strip_color(row_index: int) -> Color:
 	return ROW_STRIP_COLOR_B if row_index % 2 == 1 else ROW_STRIP_COLOR_A
 
 
-static func make_row_strip_style(row_index: int) -> StyleBoxFlat:
+static func make_row_strip_style(row_index: int) -> StyleBox:
+	var bg_color: Color = get_row_strip_color(row_index)
+	if bg_color.a < 0.01:
+		var empty: StyleBoxEmpty = StyleBoxEmpty.new()
+		empty.content_margin_left = ROW_INNER_PADDING
+		empty.content_margin_right = ROW_INNER_PADDING
+		empty.content_margin_top = 2
+		empty.content_margin_bottom = 2
+		return empty
+
 	var style: StyleBoxFlat = StyleBoxFlat.new()
-	style.bg_color = get_row_strip_color(row_index)
-	style.content_margin_left = 6
-	style.content_margin_right = 6
+	style.bg_color = bg_color
+	style.set_border_width_all(0)
+	style.content_margin_left = ROW_INNER_PADDING
+	style.content_margin_right = ROW_INNER_PADDING
 	style.content_margin_top = 2
 	style.content_margin_bottom = 2
 	return style
 
 
+static func make_row_hover_style() -> StyleBoxFlat:
+	var style: StyleBoxFlat = StyleBoxFlat.new()
+	style.bg_color = ROW_HOVER_COLOR
+	style.set_border_width_all(0)
+	style.content_margin_left = ROW_INNER_PADDING
+	style.content_margin_right = ROW_INNER_PADDING
+	style.content_margin_top = 2
+	style.content_margin_bottom = 2
+	return style
+
+
+static func make_row_selected_style(_row_index: int) -> StyleBoxFlat:
+	var style: StyleBoxFlat = StyleBoxFlat.new()
+	style.bg_color = ROW_SELECTED_COLOR
+	style.set_border_width_all(0)
+	style.content_margin_left = ROW_INNER_PADDING
+	style.content_margin_right = ROW_INNER_PADDING
+	style.content_margin_top = 2
+	style.content_margin_bottom = 2
+	return style
+
+
+static func apply_row_delete_button(button: Button) -> void:
+	button.flat = true
+	button.focus_mode = Control.FOCUS_NONE
+	button.visible = false
+	button.custom_minimum_size = Vector2(ROW_DELETE_BUTTON_WIDTH, ROW_DELETE_BUTTON_WIDTH)
+	button.tooltip_text = DMGraphTooltips.RESPONSE_DELETE
+	button.mouse_filter = Control.MOUSE_FILTER_STOP
+
+
+static func apply_row_delete_icon(button: Button, host: Node) -> void:
+	if not is_instance_valid(button) or not is_instance_valid(host):
+		return
+	if host.has_theme_icon(&"Remove", &"EditorIcons"):
+		button.icon = host.get_theme_icon(&"Remove", &"EditorIcons")
+	elif host.has_theme_icon(&"Trash", &"EditorIcons"):
+		button.icon = host.get_theme_icon(&"Trash", &"EditorIcons")
+
+
+static func measure_display_text_width(text: String, font_size: int = DISPLAY_FONT_SIZE) -> float:
+	var font: Font = get_display_font()
+	return font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x
+
+
+static func make_plain_row_style() -> StyleBox:
+	var empty: StyleBoxEmpty = StyleBoxEmpty.new()
+	empty.content_margin_left = ROW_INNER_PADDING
+	empty.content_margin_right = ROW_INNER_PADDING
+	empty.content_margin_top = 2
+	empty.content_margin_bottom = 2
+	return empty
+
+
+static func sync_group_child_widths(node: GraphNode, width: float = -1.0) -> void:
+	if not is_instance_valid(node) or not node.is_inside_tree():
+		return
+	if width <= 1.0:
+		width = node.size.x
+	if width <= 1.0:
+		width = node.custom_minimum_size.x
+	if width <= 1.0:
+		return
+	for i: int in range(0, node.get_child_count()):
+		var child: Node = node.get_child(i)
+		if child is Control:
+			var control: Control = child as Control
+			if is_equal_approx(control.custom_minimum_size.x, width):
+				continue
+			control.custom_minimum_size.x = width
+
+
+static var _drag_guard_nodes: Dictionary = {}
+static var _drag_guard_listener_ready: bool = false
+
+
+static func register_drag_guard(node: GraphNode) -> void:
+	_ensure_drag_guard_listener(node)
+	if node is GraphElement:
+		(node as GraphElement).draggable = false
+	_drag_guard_nodes[node.get_instance_id()] = node
+	_clear_graph_edit_selection(node)
+
+
+static func release_drag_guard(node: GraphNode) -> void:
+	if not is_instance_valid(node):
+		return
+	_drag_guard_nodes.erase(node.get_instance_id())
+	if node is GraphElement:
+		(node as GraphElement).draggable = true
+
+
+static func _ensure_drag_guard_listener(node: GraphNode) -> void:
+	if _drag_guard_listener_ready:
+		return
+	var tree: SceneTree = node.get_tree()
+	if tree == null:
+		return
+	tree.root.gui_input.connect(_on_drag_guard_gui_input)
+	_drag_guard_listener_ready = true
+
+
+static func _on_drag_guard_gui_input(event: InputEvent) -> void:
+	if not event is InputEventMouseButton:
+		return
+	var mouse: InputEventMouseButton = event as InputEventMouseButton
+	if mouse.pressed or mouse.button_index != MOUSE_BUTTON_LEFT:
+		return
+	for node_id: int in _drag_guard_nodes.keys():
+		var guarded: Variant = _drag_guard_nodes[node_id]
+		if is_instance_valid(guarded) and guarded is GraphElement:
+			(guarded as GraphElement).draggable = true
+	_drag_guard_nodes.clear()
+
+
+static func _clear_graph_edit_selection(node: GraphNode) -> void:
+	var graph_edit: GraphEdit = node.get_parent() as GraphEdit
+	if not is_instance_valid(graph_edit):
+		return
+	if graph_edit is DMGraphEdit:
+		(graph_edit as DMGraphEdit).clear_graph_selection()
+		return
+	for child: Node in graph_edit.get_children():
+		if child is GraphNode:
+			(child as GraphNode).selected = false
+
+
+static func measure_option_button_width(option_button: OptionButton, extra_padding: float = 48.0) -> float:
+	if not is_instance_valid(option_button) or option_button.item_count == 0:
+		return 120.0
+	var font: Font = option_button.get_theme_font(&"font")
+	var font_size: int = option_button.get_theme_font_size(&"font_size")
+	var widest: float = 0.0
+	for i: int in range(0, option_button.item_count):
+		var text: String = option_button.get_item_text(i)
+		var text_size: Vector2 = font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size)
+		widest = maxf(widest, text_size.x)
+	return widest + extra_padding
+
+
 static func apply_styled_node(node: GraphNode, accent_color: Color, title_text: String = "") -> void:
-	apply_title(node, accent_color)
-	node.title = title_text
+	apply_title(node, accent_color, false, title_text)
 
 
-static func apply_title(node: GraphNode, bg_color: Color) -> void:
+static func apply_title(node: GraphNode, bg_color: Color, flush_row_backgrounds: bool = false, title_text: String = "") -> void:
 	var style: StyleBoxFlat = _make_title_stylebox(bg_color)
 	node.add_theme_color_override(&"title_color", Color.WHITE)
 	node.add_theme_stylebox_override(&"titlebar", style)
 	node.add_theme_font_size_override(&"title_font_size", TITLE_FONT_SIZE)
 	_apply_bold_title_font(node)
 	node.clip_contents = false
-	_apply_body_panel(node, bg_color)
+	if title_text != "":
+		node.title = title_text
+	_apply_body_panel(node, flush_row_backgrounds)
+	if flush_row_backgrounds:
+		node.add_theme_constant_override(&"separation", 0)
 
 
-static func _apply_body_panel(node: GraphNode, _accent_color: Color) -> void:
+static func _apply_body_panel(node: GraphNode, flush_row_backgrounds: bool = false) -> void:
 	var panel: StyleBoxFlat = StyleBoxFlat.new()
 	panel.bg_color = BODY_FILL_COLOR
 	panel.border_color = PANEL_BORDER_COLOR
@@ -115,10 +276,16 @@ static func _apply_body_panel(node: GraphNode, _accent_color: Color) -> void:
 	panel.corner_radius_top_right = 3
 	panel.corner_radius_bottom_left = 3
 	panel.corner_radius_bottom_right = 3
-	panel.content_margin_left = CONTENT_PADDING
-	panel.content_margin_right = CONTENT_PADDING
-	panel.content_margin_top = 4
-	panel.content_margin_bottom = CONTENT_PADDING
+	if flush_row_backgrounds:
+		panel.content_margin_left = 0
+		panel.content_margin_right = 0
+		panel.content_margin_top = 0
+		panel.content_margin_bottom = 0
+	else:
+		panel.content_margin_left = CONTENT_PADDING
+		panel.content_margin_right = CONTENT_PADDING
+		panel.content_margin_top = 4
+		panel.content_margin_bottom = CONTENT_PADDING
 	node.add_theme_stylebox_override(&"panel", panel)
 
 
@@ -167,7 +334,7 @@ static func apply_compact(node: GraphNode, bg_color: Color) -> void:
 	node.clip_contents = false
 
 	var panel_style: StyleBoxFlat = StyleBoxFlat.new()
-	panel_style.bg_color = bg_color.lightened(COMPACT_LIGHTEN_AMOUNT).darkened(COMPACT_DARKEN_AMOUNT)
+	panel_style.bg_color = _accent_header_color(bg_color, COMPACT_LIGHTEN_AMOUNT, COMPACT_DARKEN_AMOUNT)
 	panel_style.set_corner_radius_all(4)
 	panel_style.set_border_width_all(0)
 	panel_style.content_margin_left = 8
@@ -188,9 +355,15 @@ static func apply_compact_panel(panel: PanelContainer, _bg_color: Color) -> void
 			_apply_bold_title_font_to_control(title_label, 800)
 
 
+static func _accent_header_color(accent: Color, lighten_amount: float, darken_amount: float) -> Color:
+	var saturated: Color = accent
+	saturated.s = minf(accent.s * TITLE_SATURATION_BOOST, 1.0)
+	return saturated.lightened(lighten_amount).darkened(darken_amount)
+
+
 static func _make_title_stylebox(bg_color: Color) -> StyleBoxFlat:
 	var style: StyleBoxFlat = StyleBoxFlat.new()
-	style.bg_color = bg_color.lightened(TITLE_LIGHTEN_AMOUNT).darkened(TITLE_DARKEN_AMOUNT)
+	style.bg_color = _accent_header_color(bg_color, TITLE_LIGHTEN_AMOUNT, TITLE_DARKEN_AMOUNT)
 	style.corner_radius_top_left = 4
 	style.corner_radius_top_right = 4
 	style.content_margin_left = 10
@@ -311,6 +484,19 @@ static func apply_field_background(field: Control) -> void:
 		field.add_theme_stylebox_override(state, style)
 
 
+static func apply_inspector_panel(panel: PanelContainer) -> void:
+	var style: StyleBoxFlat = StyleBoxFlat.new()
+	style.bg_color = BODY_FILL_COLOR
+	style.set_border_width_all(1)
+	style.border_color = Color(0.14, 0.14, 0.16, 1.0)
+	style.set_corner_radius_all(4)
+	style.content_margin_left = 0
+	style.content_margin_right = 0
+	style.content_margin_top = 0
+	style.content_margin_bottom = 0
+	panel.add_theme_stylebox_override(&"panel", style)
+
+
 static func _make_field_stylebox() -> StyleBoxFlat:
 	var style: StyleBoxFlat = StyleBoxFlat.new()
 	style.bg_color = FIELD_BG_COLOR
@@ -345,22 +531,25 @@ static func apply_popup_menu(menu: PopupMenu) -> void:
 	if menu == null:
 		return
 	var panel: StyleBoxFlat = StyleBoxFlat.new()
-	panel.bg_color = Color(0.11, 0.11, 0.13, 1.0)
-	panel.border_color = Color(0.22, 0.22, 0.26, 1.0)
+	panel.bg_color = POPUP_MENU_BG_COLOR
+	panel.border_color = POPUP_MENU_BORDER_COLOR
 	panel.set_border_width_all(1)
-	panel.set_corner_radius_all(4)
-	panel.content_margin_left = 4
-	panel.content_margin_right = 4
-	panel.content_margin_top = 4
-	panel.content_margin_bottom = 4
+	panel.set_corner_radius_all(6)
+	panel.content_margin_left = 6
+	panel.content_margin_right = 6
+	panel.content_margin_top = 6
+	panel.content_margin_bottom = 6
+	panel.shadow_color = Color(0, 0, 0, 0.55)
+	panel.shadow_size = 10
+	panel.shadow_offset = Vector2(0, 3)
 	menu.add_theme_stylebox_override(&"panel", panel)
 	menu.add_theme_color_override(&"font_color", DISPLAY_TEXT_COLOR)
 	menu.add_theme_color_override(&"font_hover_color", Color.WHITE)
 	menu.add_theme_color_override(&"font_accelerator_color", LABEL_MUTED_COLOR)
 	menu.add_theme_font_size_override(&"font_size", DISPLAY_FONT_SIZE)
 	var hover: StyleBoxFlat = StyleBoxFlat.new()
-	hover.bg_color = Color(0.18, 0.18, 0.22, 1.0)
-	hover.set_corner_radius_all(2)
+	hover.bg_color = POPUP_MENU_HOVER_COLOR
+	hover.set_corner_radius_all(3)
 	menu.add_theme_stylebox_override(&"hover", hover)
 
 

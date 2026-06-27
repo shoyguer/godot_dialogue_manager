@@ -5,6 +5,8 @@ class_name DMGraphResponseGroupNode
 
 signal content_changed()
 signal add_response_requested()
+signal delete_response_requested(response_id: String)
+signal response_row_edit_requested(response_id: String, grab_focus: bool)
 signal group_rebuilt()
 
 
@@ -12,27 +14,41 @@ const ROW_SEPARATION: int = 4
 const ROW_MARGIN_TOP: int = 2
 const ROW_MARGIN_BOTTOM: int = 4
 const ROW_HEIGHT: float = 24.0
-const MIN_TEXT_WIDTH: float = 180.0
-const MAX_TEXT_WIDTH: float = 480.0
-const GROUP_HORIZONTAL_PADDING: float = 8.0
+const MIN_TEXT_WIDTH: float = 200.0
+const MAX_TEXT_WIDTH: float = 520.0
 
 
 var group_data: Dictionary = {}
 var response_rows: Array[Dictionary] = []
 var _is_rebuilding: bool = false
 var _suppress_field_sync: bool = false
-var _row_popup: Window
 var _accent_color: Color = DMGraphNodeTheme.ACCENT_RESPONSE
+var _active_response_id: String = ""
 
 
 func _ready() -> void:
 	resizable = false
 	_apply_node_title()
+	if not gui_input.is_connected(_on_group_gui_input):
+		gui_input.connect(_on_group_gui_input)
+
+
+func _on_group_gui_input(event: InputEvent) -> void:
+	if not event is InputEventMouseButton:
+		return
+	var mouse: InputEventMouseButton = event as InputEventMouseButton
+	if mouse.button_index != MOUSE_BUTTON_LEFT or not mouse.pressed:
+		return
+	if mouse.position.y <= 30.0:
+		set_active_response_id("")
 
 
 func setup_group(responses: Array[Dictionary], node_position: Vector2 = Vector2.ZERO) -> void:
+	var group_id: String = group_data.get("id", "")
+	if group_id == "":
+		group_id = "rg_%s" % responses[0].id if responses.size() > 0 else "rg_empty"
 	group_data = {
-		id = "rg_%s" % responses[0].id if responses.size() > 0 else "rg_empty",
+		id = group_id,
 		type = "response_group",
 		response_ids = [] as Array[String],
 		position = node_position,
@@ -113,7 +129,7 @@ func _disconnect_own_connections() -> void:
 
 
 func _configure_slots() -> void:
-	if _is_rebuilding or response_rows.is_empty():
+	if _is_rebuilding:
 		return
 
 	var child_count: int = get_child_count()
@@ -121,6 +137,10 @@ func _configure_slots() -> void:
 		return
 
 	var port_color: Color = DMGraphNodeTheme.get_port_color_for_type("response_group")
+	if response_rows.is_empty():
+		set_slot(0, false, 0, port_color, false, 0, port_color)
+		return
+
 	for i: int in range(0, response_rows.size()):
 		if i >= child_count:
 			break
@@ -161,6 +181,7 @@ func _rebuild_rows() -> void:
 	_update_minimum_size()
 	_is_rebuilding = false
 	group_rebuilt.emit()
+	_refresh_response_row_selection()
 	call_deferred("_end_row_rebuild")
 
 
@@ -168,9 +189,36 @@ func _end_row_rebuild() -> void:
 	_suppress_field_sync = false
 
 
+func get_active_response_id() -> String:
+	return _active_response_id
+
+
+func set_active_response_id(response_id: String) -> void:
+	_active_response_id = response_id
+	_refresh_response_row_selection()
+
+
+func _refresh_response_row_selection() -> void:
+	if not is_inside_tree() or _is_rebuilding:
+		return
+	for i: int in range(0, response_rows.size()):
+		if i >= get_child_count():
+			break
+		var wrapper: Control = get_child(i) as Control
+		if not wrapper is PanelContainer:
+			continue
+		var panel: PanelContainer = wrapper as PanelContainer
+		var row_index: int = int(panel.get_meta(&"row_index", 0))
+		var row_id: String = response_rows[row_index].id if row_index < response_rows.size() else ""
+		if row_id != "" and row_id == _active_response_id:
+			panel.add_theme_stylebox_override(&"panel", DMGraphNodeTheme.make_row_selected_style(row_index))
+		else:
+			panel.add_theme_stylebox_override(&"panel", DMGraphNodeTheme.make_row_strip_style(row_index))
+
+
 func _apply_node_title() -> void:
 	_accent_color = DMGraphNodeTheme.get_accent_for_type("response_group")
-	DMGraphNodeTheme.apply_title(self, _accent_color)
+	DMGraphNodeTheme.apply_title(self, _accent_color, true)
 	title = "Responses"
 
 
@@ -182,14 +230,104 @@ func _wrap_response_row(row: HBoxContainer, row_index: int) -> PanelContainer:
 	panel.add_child(row)
 	panel.custom_minimum_size.y = ROW_HEIGHT + float(ROW_MARGIN_TOP if row_index > 0 else 0) + float(ROW_MARGIN_BOTTOM)
 	panel.set_meta(&"response_row", row)
+	panel.set_meta(&"row_index", row_index)
+	panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	panel.tooltip_text = DMGraphTooltips.RESPONSE_ROW
+	panel.gui_input.connect(_on_row_panel_gui_input.bind(panel))
+	_bind_response_row_hover(panel)
 	return panel
+
+
+func _bind_response_row_hover(panel: PanelContainer) -> void:
+	var targets: Array[Control] = [panel]
+	var row: HBoxContainer = _get_row_content(panel)
+	if is_instance_valid(row):
+		targets.append(row)
+		for child: Node in row.get_children():
+			if child is Control:
+				targets.append(child as Control)
+	for target: Control in targets:
+		target.mouse_entered.connect(_on_response_row_hover_entered.bind(panel))
+		target.mouse_exited.connect(_on_response_row_hover_exited.bind(panel))
+
+
+func _on_response_row_hover_entered(panel: PanelContainer) -> void:
+	if not is_instance_valid(panel):
+		return
+	_set_response_row_hovered(panel, true)
+
+
+func _on_response_row_hover_exited(panel: PanelContainer) -> void:
+	if not is_instance_valid(panel):
+		return
+	call_deferred("_finish_response_row_hover_exit", panel)
+
+
+func _finish_response_row_hover_exit(panel: PanelContainer) -> void:
+	if not is_instance_valid(panel):
+		return
+	if _is_mouse_over_response_row(panel):
+		return
+	_set_response_row_hovered(panel, false)
+
+
+func _is_mouse_over_response_row(panel: PanelContainer) -> bool:
+	if not is_instance_valid(panel):
+		return false
+	var mouse_position: Vector2 = panel.get_viewport().get_mouse_position()
+	return panel.get_global_rect().has_point(mouse_position)
+
+
+func _set_response_row_hovered(panel: PanelContainer, hovered: bool) -> void:
+	if not is_instance_valid(panel):
+		return
+	var row: HBoxContainer = _get_row_content(panel)
+	if not row:
+		return
+	var row_index: int = int(panel.get_meta(&"row_index", 0))
+	var row_id: String = response_rows[row_index].id if row_index < response_rows.size() else ""
+	if hovered:
+		panel.add_theme_stylebox_override(&"panel", DMGraphNodeTheme.make_row_hover_style())
+	elif row_id != "" and row_id == _active_response_id:
+		panel.add_theme_stylebox_override(&"panel", DMGraphNodeTheme.make_row_selected_style(row_index))
+	else:
+		panel.add_theme_stylebox_override(&"panel", DMGraphNodeTheme.make_row_strip_style(row_index))
+	var delete_button: Button = row.get_node_or_null("DeleteButton") as Button
+	if is_instance_valid(delete_button):
+		delete_button.visible = hovered
+
+
+func _on_row_panel_gui_input(event: InputEvent, panel: PanelContainer) -> void:
+	if not event is InputEventMouseButton:
+		return
+	var mouse: InputEventMouseButton = event as InputEventMouseButton
+	if mouse.button_index != MOUSE_BUTTON_LEFT or not mouse.pressed:
+		return
+	var row: HBoxContainer = _get_row_content(panel)
+	if not row:
+		return
+	var delete_button: Button = row.get_node_or_null("DeleteButton") as Button
+	if is_instance_valid(delete_button) and delete_button.get_global_rect().has_point(mouse.global_position):
+		return
+	accept_event()
+	selected = false
+	call_deferred("_deselect_node")
+	var response_id: String = str(row.get_meta(&"response_id", ""))
+	if response_id == "":
+		return
+	set_active_response_id(response_id)
+	response_row_edit_requested.emit(response_id, mouse.double_click)
+
+
+func _deselect_node() -> void:
+	selected = false
 
 
 func _wrap_add_row(add_row: HBoxContainer) -> PanelContainer:
 	var panel: PanelContainer = PanelContainer.new()
 	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	panel.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
-	panel.add_theme_stylebox_override(&"panel", DMGraphNodeTheme.make_row_strip_style(response_rows.size()))
+	panel.add_theme_stylebox_override(&"panel", DMGraphNodeTheme.make_plain_row_style())
 	panel.add_child(add_row)
 	panel.custom_minimum_size.y = 24.0
 	return panel
@@ -213,6 +351,7 @@ func _create_response_row(row_data: Dictionary, row_index: int) -> HBoxContainer
 	var row: HBoxContainer = HBoxContainer.new()
 	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.alignment = BoxContainer.ALIGNMENT_BEGIN
 	row.add_theme_constant_override(&"separation", ROW_SEPARATION)
 	row.custom_minimum_size.y = ROW_HEIGHT
@@ -221,25 +360,37 @@ func _create_response_row(row_data: Dictionary, row_index: int) -> HBoxContainer
 	number_label.name = "ResponseNumberLabel"
 	number_label.text = "%d." % (row_index + 1)
 	number_label.custom_minimum_size = Vector2(DMGraphNodeTheme.RESPONSE_NUMBER_WIDTH, 0)
+	number_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	DMGraphNodeTheme.apply_response_number_label(number_label)
 	row.add_child(number_label)
 
 	var display_label: Label = DMGraphNodeTheme.create_display_label("ResponseDisplayLabel")
+	display_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	display_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	display_label.mouse_filter = Control.MOUSE_FILTER_STOP
+	display_label.clip_text = true
+	display_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	display_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	DMGraphNodeTheme.apply_display_body_label(display_label)
-	display_label.gui_input.connect(_on_row_display_gui_input.bind(row_data.id))
 	row.add_child(display_label)
+
+	var delete_button: Button = Button.new()
+	delete_button.name = "DeleteButton"
+	DMGraphNodeTheme.apply_row_delete_button(delete_button)
+	delete_button.pressed.connect(_on_delete_response_pressed.bind(row_data.id))
+	call_deferred("_apply_row_delete_icon", delete_button)
+	row.add_child(delete_button)
 
 	var text_edit: TextEdit = TextEdit.new()
 	text_edit.name = "TextEdit"
 	text_edit.visible = false
+	text_edit.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	text_edit.text = display_text
 	text_edit.text_changed.connect(_on_field_changed.bind(row_data.id))
 
 	var condition_edit: DMGraphExpressionField = DMGraphExpressionField.new()
 	condition_edit.name = "ConditionEdit"
 	condition_edit.visible = false
+	condition_edit.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	condition_edit.set_text_silent(condition)
 	condition_edit.text_modified.connect(_on_field_changed.bind(row_data.id))
 
@@ -270,83 +421,18 @@ func _update_row_display_label(row: HBoxContainer, row_index: int) -> void:
 		condition = DMGraphTreeBuilder.normalize_condition_text(condition_edit.text)
 	if condition != "":
 		line += " [if %s /]" % condition
-	display_label.text = DMGraphNodeTheme.truncate_display_text(line, 2)
+	display_label.text = line
 	display_label.tooltip_text = "%d. %s" % [row_index + 1, line]
 
 
-func _on_row_display_gui_input(event: InputEvent, response_id: String) -> void:
-	if not event is InputEventMouseButton:
+func _apply_row_delete_icon(delete_button: Button) -> void:
+	if not is_instance_valid(delete_button) or not is_inside_tree():
 		return
-	var mouse: InputEventMouseButton = event as InputEventMouseButton
-	if mouse.button_index != MOUSE_BUTTON_LEFT or not mouse.double_click:
-		return
-	_open_row_edit_popup(response_id)
+	DMGraphNodeTheme.apply_row_delete_icon(delete_button, self)
 
 
-func _open_row_edit_popup(response_id: String) -> void:
-	var row_index: int = _find_row_index(response_id)
-	if row_index == -1:
-		return
-	var row: HBoxContainer = _get_row_content(get_child(row_index) as Control)
-	if not row:
-		return
-
-	var text_edit: TextEdit = row.get_node_or_null("TextEdit") as TextEdit
-	var condition_edit: DMGraphExpressionField = row.get_node_or_null("ConditionEdit") as DMGraphExpressionField
-	if not is_instance_valid(text_edit):
-		return
-
-	if is_instance_valid(_row_popup):
-		_row_popup.queue_free()
-
-	_row_popup = Window.new()
-	_row_popup.title = "Edit response"
-	_row_popup.unresizable = false
-	_row_popup.size = Vector2i(480, 200)
-	_row_popup.min_size = Vector2i(320, 120)
-	_row_popup.close_requested.connect(_row_popup.queue_free)
-
-	var margin: MarginContainer = MarginContainer.new()
-	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	margin.add_theme_constant_override(&"margin_left", 8)
-	margin.add_theme_constant_override(&"margin_right", 8)
-	margin.add_theme_constant_override(&"margin_top", 8)
-	margin.add_theme_constant_override(&"margin_bottom", 8)
-	_row_popup.add_child(margin)
-
-	var vbox: VBoxContainer = VBoxContainer.new()
-	vbox.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	margin.add_child(vbox)
-
-	var popup_edit: TextEdit = TextEdit.new()
-	popup_edit.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	popup_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	popup_edit.text = text_edit.text
-	popup_edit.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
-	vbox.add_child(popup_edit)
-
-	var condition_field: LineEdit = LineEdit.new()
-	condition_field.placeholder_text = "Visibility condition [if expr /]"
-	if is_instance_valid(condition_edit):
-		condition_field.text = condition_edit.text
-	vbox.add_child(condition_field)
-
-	var close_row: HBoxContainer = HBoxContainer.new()
-	close_row.alignment = BoxContainer.ALIGNMENT_END
-	var done_button: Button = Button.new()
-	done_button.text = "Done"
-	done_button.pressed.connect(func() -> void:
-		text_edit.text = popup_edit.text
-		if is_instance_valid(condition_edit):
-			condition_edit.set_text_silent(condition_field.text)
-		_on_field_changed("", response_id)
-		_row_popup.queue_free()
-	)
-	close_row.add_child(done_button)
-	vbox.add_child(close_row)
-
-	add_child(_row_popup)
-	_row_popup.popup_centered()
+func _on_delete_response_pressed(response_id: String) -> void:
+	delete_response_requested.emit(response_id)
 
 
 func _create_add_row() -> HBoxContainer:
@@ -358,6 +444,7 @@ func _create_add_row() -> HBoxContainer:
 	add_button.focus_mode = Control.FOCUS_NONE
 	add_button.flat = true
 	add_button.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	add_button.tooltip_text = DMGraphTooltips.RESPONSE_ADD
 	add_button.pressed.connect(_on_add_pressed)
 	call_deferred("_apply_add_button_icon", add_button)
 
@@ -454,6 +541,12 @@ func finalize_layout_size() -> void:
 
 func _update_minimum_size() -> void:
 	var max_width: float = MIN_TEXT_WIDTH
+	var reserved: float = (
+		DMGraphNodeTheme.RESPONSE_NUMBER_WIDTH
+		+ DMGraphNodeTheme.ROW_DELETE_BUTTON_WIDTH
+		+ float(DMGraphNodeTheme.ROW_INNER_PADDING) * 2.0
+		+ 12.0
+	)
 	for i: int in range(0, response_rows.size()):
 		if i >= get_child_count():
 			break
@@ -462,7 +555,8 @@ func _update_minimum_size() -> void:
 			continue
 		var display_label: Label = row.get_node_or_null("ResponseDisplayLabel") as Label
 		if is_instance_valid(display_label):
-			max_width = maxf(max_width, float(display_label.text.length()) * 7.0 + DMGraphNodeTheme.RESPONSE_NUMBER_WIDTH + 24.0)
+			var line_width: float = DMGraphNodeTheme.measure_display_text_width(display_label.text)
+			max_width = maxf(max_width, line_width + reserved)
 	max_width = mini(max_width, MAX_TEXT_WIDTH)
 
 	var total_height: float = 0.0
@@ -471,4 +565,9 @@ func _update_minimum_size() -> void:
 		if wrapper:
 			total_height += wrapper.custom_minimum_size.y
 	total_height += DMGraphNodeTheme.NODE_BOTTOM_MARGIN + 8.0
-	custom_minimum_size = Vector2(max_width + GROUP_HORIZONTAL_PADDING, total_height)
+	custom_minimum_size = Vector2(max_width, total_height)
+	call_deferred("_deferred_sync_row_widths", max_width)
+
+
+func _deferred_sync_row_widths(width: float) -> void:
+	DMGraphNodeTheme.sync_group_child_widths(self, width)

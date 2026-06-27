@@ -15,6 +15,8 @@ var _include_type: Callable = Callable()
 
 func _ready() -> void:
 	rebuild_add_menu()
+	if is_instance_valid(auto_layout_button):
+		auto_layout_button.tooltip_text = DMGraphTooltips.PALETTE_AUTO_LAYOUT
 
 
 func rebuild_add_menu(include_type: Callable = Callable()) -> void:
@@ -36,6 +38,7 @@ func rebuild_add_menu(include_type: Callable = Callable()) -> void:
 		button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 		DMGraphNodeTheme.apply_palette_add_button(button)
 		button.pressed.connect(_on_add_button_pressed.bind(type))
+		button.tooltip_text = DMGraphTooltips.for_palette_type(type)
 		add_buttons_row.add_child(button)
 
 

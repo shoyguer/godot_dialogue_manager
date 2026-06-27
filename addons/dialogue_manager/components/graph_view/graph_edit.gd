@@ -67,6 +67,13 @@ func is_point_on_connection(local_point: Vector2, max_distance: float = HOVER_DI
 	return not get_closest_connection_at_point(local_point, max_distance).is_empty()
 
 
+## Clears selection on all child graph nodes (GraphEdit has no clear_selection in all Godot versions).
+func clear_graph_selection() -> void:
+	for child: Node in get_children():
+		if child is GraphNode:
+			(child as GraphNode).selected = false
+
+
 func _connection_key(connection: Dictionary) -> String:
 	if connection.is_empty(): return ""
 	return "%s:%d->%s:%d" % [
