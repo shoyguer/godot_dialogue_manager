@@ -61,7 +61,7 @@ var _skip_auto_layout_on_populate: bool = false
 var _mouse_press_undo_before: Dictionary = {}
 var _debounced_undo_before: Dictionary = {}
 var _undo_debounce_timer: Timer
-var _graph_context_menu: PopupMenu
+var _graph_context_menu: DMGraphNodeTypeMenu
 var _node_context_menu: PopupMenu
 var _context_menu_spawn_position: Vector2 = Vector2.ZERO
 var _context_menu_target_node: GraphNode
@@ -143,9 +143,8 @@ func _ready() -> void:
 	_undo_debounce_timer.timeout.connect(_commit_debounced_undo)
 	add_child(_undo_debounce_timer)
 
-	_graph_context_menu = PopupMenu.new()
-	_graph_context_menu.id_pressed.connect(_on_graph_context_menu_id_pressed)
-	DMGraphNodeTheme.apply_popup_menu(_graph_context_menu)
+	_graph_context_menu = DMGraphNodeTypeMenu.new()
+	_graph_context_menu.type_selected.connect(_on_graph_context_menu_type_selected)
 	graph_edit.add_child(_graph_context_menu)
 
 	_node_context_menu = PopupMenu.new()
@@ -167,6 +166,8 @@ func _ready() -> void:
 func _process(_delta: float) -> void:
 	if visible and is_instance_valid(graph_edit):
 		DMGraphNodeHeaderControls.update_all(graph_edit)
+		DMGraphNodeHover.update_all(graph_edit)
+		DMGraphNodeTheme.sync_all_selection_outlines(graph_edit)
 
 
 func _on_visibility_changed() -> void:
@@ -899,9 +900,20 @@ func _create_compact_node(data: Dictionary) -> DMGraphCompactNode:
 	var gn: DMGraphCompactNode = CompactNodeScene.instantiate()
 	graph_edit.add_child(gn)
 	gn.setup(data)
+	if not gn.node_interacted.is_connected(_on_compact_node_interacted):
+		gn.node_interacted.connect(_on_compact_node_interacted.bind(gn))
 	_graph_nodes[data.id] = gn
 	_attach_node_header_controls(gn, OUTLINE_NODE_TITLE_HEIGHT)
 	return gn
+
+
+func _on_compact_node_interacted(gn: DMGraphCompactNode) -> void:
+	_clear_response_row_selections()
+	for child: Node in graph_edit.get_children():
+		if child is GraphNode and child != gn:
+			(child as GraphNode).selected = false
+	gn.selected = true
+	_select_node_data(gn.get_data())
 
 
 func _attach_node_header_controls(gn: GraphNode, title_height: float = DMGraphNodeHeaderControls.DEFAULT_TITLE_HEIGHT) -> void:
@@ -2272,9 +2284,12 @@ func _on_graph_popup_request(at_position: Vector2) -> void:
 
 func _show_add_node_context_menu(at_position: Vector2) -> void:
 	_context_menu_spawn_position = graph_edit.local_point_to_graph_position(at_position)
-	DMGraphNodeIcons.populate_popup(_graph_context_menu, _can_add_node_type)
-	if _graph_context_menu.item_count == 0: return
-	_popup_menu_at_graph_point(_graph_context_menu, at_position)
+	_graph_context_menu.populate(_can_add_node_type)
+	if not _graph_context_menu.has_entries():
+		return
+	_graph_context_menu.reset_size()
+	_graph_context_menu.position = DisplayServer.mouse_get_position()
+	_graph_context_menu.popup()
 
 
 func _show_node_context_menu(graph_node: GraphNode, at_position: Vector2) -> void:
@@ -2295,9 +2310,9 @@ func _refresh_palette_menu() -> void:
 		palette.rebuild_add_menu(_can_add_node_type)
 
 
-func _on_graph_context_menu_id_pressed(id: int) -> void:
-	var type: String = DMGraphNodeIcons.get_type_for_menu_id(_graph_context_menu, id)
-	if type == "": return
+func _on_graph_context_menu_type_selected(type: String) -> void:
+	if type == "":
+		return
 	_on_node_type_selected(type, _context_menu_spawn_position)
 
 

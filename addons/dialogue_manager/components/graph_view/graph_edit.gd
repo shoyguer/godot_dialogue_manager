@@ -11,7 +11,7 @@ signal connection_hovered(connection: Dictionary)
 signal connection_hover_cleared()
 
 
-## Maximum distance in pixels to detect a hovered connection.
+## Maximum distance in pixels to detect a hovered connection line.
 const HOVER_DISTANCE: float = 14.0
 
 
@@ -23,7 +23,8 @@ func _ready() -> void:
 
 
 func _process(_delta: float) -> void:
-	if not is_visible_in_tree(): return
+	if not is_visible_in_tree():
+		return
 	var hovered: Dictionary = get_closest_connection_at_point(get_local_mouse_position(), HOVER_DISTANCE)
 	if hovered.is_empty():
 		if not _last_hovered.is_empty():
@@ -75,7 +76,8 @@ func clear_graph_selection() -> void:
 
 
 func _connection_key(connection: Dictionary) -> String:
-	if connection.is_empty(): return ""
+	if connection.is_empty():
+		return ""
 	return "%s:%d->%s:%d" % [
 		connection.get("from_node", ""),
 		int(connection.get("from_port", -1)),

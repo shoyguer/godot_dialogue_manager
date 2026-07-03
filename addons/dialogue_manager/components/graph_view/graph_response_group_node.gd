@@ -193,6 +193,18 @@ func get_active_response_id() -> String:
 	return _active_response_id
 
 
+func is_mouse_over_response_row(mouse_global: Vector2) -> bool:
+	if not get_global_rect().has_point(mouse_global):
+		return false
+	for i: int in range(0, response_rows.size()):
+		if i >= get_child_count():
+			break
+		var child: Node = get_child(i)
+		if child is PanelContainer and (child as PanelContainer).get_global_rect().has_point(mouse_global):
+			return true
+	return false
+
+
 func set_active_response_id(response_id: String) -> void:
 	_active_response_id = response_id
 	_refresh_response_row_selection()

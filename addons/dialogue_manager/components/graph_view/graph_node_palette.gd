@@ -31,9 +31,6 @@ func rebuild_add_menu(include_type: Callable = Callable()) -> void:
 			continue
 		var button: Button = Button.new()
 		button.text = "+ %s" % entry.get("label", type.capitalize())
-		var icon: Texture2D = DMGraphNodeIcons.get_icon(entry)
-		if icon:
-			button.icon = icon
 		button.focus_mode = Control.FOCUS_NONE
 		button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 		DMGraphNodeTheme.apply_palette_add_button(button)

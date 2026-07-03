@@ -648,9 +648,9 @@ func _build_random_node_editor(node_data: Dictionary) -> void:
 	_extra_controls["random_text_edit"] = text_edit
 
 
-func _make_expression_field(expression: String, line_type: String) -> DMGraphExpressionField:
+func _make_expression_field(expression: String, line_type: String, min_height: float = 40.0) -> DMGraphExpressionField:
 	var expr_edit: DMGraphExpressionField = DMGraphExpressionField.new()
-	expr_edit.custom_minimum_size = Vector2(0, 28)
+	expr_edit.custom_minimum_size = Vector2(0, min_height)
 	expr_edit.set_line_type(line_type)
 	expr_edit.set_text_silent(expression)
 	expr_edit.completion_cue_names = _completion_cue_names.duplicate()

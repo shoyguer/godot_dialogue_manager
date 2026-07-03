@@ -10,9 +10,10 @@ signal group_rebuilt()
 
 
 const ROW_SEPARATION: int = 4
-const MIN_EXPR_WIDTH: float = 200.0
+const MIN_EXPR_WIDTH: float = 96.0
 const MAX_EXPR_WIDTH: float = 480.0
 const PREFIX_WIDTH: float = 44.0
+const MIN_NODE_WIDTH: float = 180.0
 const PORT_COLOR: Color = DMGraphNodeTheme.PORT_COLOR
 
 
@@ -198,7 +199,7 @@ func _rebuild_rows() -> void:
 		child.queue_free()
 
 	group_data.branch_ids = [] as Array[String]
-	var max_row_width: float = MIN_EXPR_WIDTH
+	var max_row_width: float = 0.0
 	var slot_index: int = 0
 
 	for i: int in range(0, branch_rows.size()):
@@ -253,9 +254,9 @@ func _create_branch_row(row_data: Dictionary, branch_type: String, _index: int) 
 	expr_edit.text_modified.connect(_on_field_changed.bind(row_data.id))
 	row.add_child(expr_edit)
 
-	var expr_width: float = maxf(MIN_EXPR_WIDTH, mini(float(expression.length()) * 7.0 + 40.0, MAX_EXPR_WIDTH))
+	var expr_width: float = _measure_expression_width(expression)
 	expr_edit.custom_minimum_size = Vector2(expr_width, 28.0)
-	row.custom_minimum_size = Vector2(PREFIX_WIDTH + expr_width + 8.0, 28.0)
+	row.custom_minimum_size = Vector2(PREFIX_WIDTH + expr_width + float(ROW_SEPARATION), 28.0)
 	row.set_meta("branch_id", row_data.id)
 	return row
 
@@ -304,6 +305,7 @@ func _on_add_else_pressed() -> void:
 
 func _on_field_changed(_value: String, branch_id: String) -> void:
 	_sync_row_from_fields(branch_id)
+	_remeasure_layout()
 	content_changed.emit()
 
 
@@ -342,7 +344,7 @@ func _find_row_index(branch_id: String) -> int:
 	return -1
 
 
-func _update_minimum_size(content_width: float = 300.0) -> void:
+func _update_minimum_size(content_width: float = 0.0) -> void:
 	var total_height: float = 12.0
 	for i: int in range(0, branch_rows.size()):
 		if i < get_child_count():
@@ -350,9 +352,48 @@ func _update_minimum_size(content_width: float = 300.0) -> void:
 			if row and row.name != "ActionsRow":
 				total_height += maxf(28.0, row.custom_minimum_size.y) + float(ROW_SEPARATION)
 	total_height += 36.0
-	var node_width: float = maxf(280.0, content_width + PREFIX_WIDTH + 16.0)
+	var node_width: float = maxf(MIN_NODE_WIDTH, content_width + 24.0)
 	custom_minimum_size = Vector2(node_width, total_height + DMGraphNodeTheme.NODE_BOTTOM_MARGIN)
 	call_deferred("_deferred_sync_row_widths", node_width)
+
+
+func _measure_expression_width(expression: String) -> float:
+	var trimmed: String = expression.strip_edges()
+	if trimmed.is_empty():
+		return MIN_EXPR_WIDTH
+	var measured: float = DMGraphNodeTheme.measure_display_text_width(trimmed, DMGraphNodeTheme.DISPLAY_FONT_SIZE) + 28.0
+	return clampf(measured, MIN_EXPR_WIDTH, MAX_EXPR_WIDTH)
+
+
+func _remeasure_layout() -> void:
+	var max_row_width: float = 0.0
+	for i: int in range(0, branch_rows.size()):
+		if i >= get_child_count():
+			break
+		var wrapped: Control = get_child(i) as Control
+		if not is_instance_valid(wrapped) or wrapped.name == "ActionsRow":
+			continue
+		var row: HBoxContainer = null
+		if wrapped is PanelContainer and wrapped.get_child_count() > 0:
+			row = wrapped.get_child(0) as HBoxContainer
+		elif wrapped is HBoxContainer:
+			row = wrapped
+		if not is_instance_valid(row):
+			continue
+		var branch_type: String = infer_branch_type(branch_rows[i], i)
+		var expression: String = ""
+		var expr_edit: DMGraphExpressionField = row.get_node_or_null("ExpressionEdit") as DMGraphExpressionField
+		if is_instance_valid(expr_edit):
+			expression = expr_edit.text
+		var expr_width: float = _measure_expression_width(expression) if branch_type != "else" else 48.0
+		if is_instance_valid(expr_edit):
+			expr_edit.custom_minimum_size = Vector2(expr_width, 28.0)
+		var row_width: float = PREFIX_WIDTH + expr_width + float(ROW_SEPARATION) if branch_type != "else" else PREFIX_WIDTH + 48.0
+		row.custom_minimum_size = Vector2(row_width, 28.0)
+		if wrapped is PanelContainer:
+			wrapped.custom_minimum_size = row.custom_minimum_size
+		max_row_width = maxf(max_row_width, row_width)
+	_update_minimum_size(max_row_width)
 
 
 func _deferred_sync_row_widths(width: float) -> void:

@@ -9,7 +9,7 @@ const LABEL_MUTED_COLOR: Color = Color(0.52, 0.52, 0.56, 1.0)
 const FIELD_BG_COLOR: Color = Color(0.08, 0.08, 0.1, 1.0)
 const BODY_FILL_COLOR: Color = Color(0.08, 0.07, 0.06, 1.0)
 const POPUP_MENU_BG_COLOR: Color = Color(0.19, 0.19, 0.23, 1.0)
-const POPUP_MENU_BORDER_COLOR: Color = Color(0.40, 0.40, 0.46, 1.0)
+const POPUP_MENU_BORDER_COLOR: Color = Color(0.52, 0.52, 0.58, 1.0)
 const POPUP_MENU_HOVER_COLOR: Color = Color(0.26, 0.26, 0.31, 1.0)
 const HEADER_STRIP_COLOR: Color = Color(0.18, 0.18, 0.2, 0.92)
 const HEADER_STRIP_HEIGHT: float = 6.0
@@ -265,6 +265,30 @@ static func apply_title(node: GraphNode, bg_color: Color, flush_row_backgrounds:
 	_apply_body_panel(node, flush_row_backgrounds)
 	if flush_row_backgrounds:
 		node.add_theme_constant_override(&"separation", 0)
+	node.set_meta(&"graph_title_accent", bg_color)
+	apply_neutral_selection_styles(node)
+
+
+static func apply_neutral_selection_styles(node: GraphNode) -> void:
+	var titlebar: StyleBox = node.get_theme_stylebox(&"titlebar")
+	var panel: StyleBox = node.get_theme_stylebox(&"panel")
+	if titlebar != null:
+		node.add_theme_stylebox_override(&"titlebar_selected", titlebar)
+	if panel != null:
+		node.add_theme_stylebox_override(&"panel_selected", panel)
+	var empty_slot: StyleBoxEmpty = StyleBoxEmpty.new()
+	node.add_theme_stylebox_override(&"slot", empty_slot)
+	node.add_theme_stylebox_override(&"slot_selected", empty_slot)
+
+
+static func apply_title_hover(node: GraphNode, bg_color: Color) -> void:
+	var style: StyleBoxFlat = _make_title_stylebox(bg_color)
+	style.bg_color = style.bg_color.lightened(0.07)
+	node.add_theme_stylebox_override(&"titlebar", style)
+
+
+static func restore_title_style(node: GraphNode, bg_color: Color) -> void:
+	node.add_theme_stylebox_override(&"titlebar", _make_title_stylebox(bg_color))
 
 
 static func _apply_body_panel(node: GraphNode, flush_row_backgrounds: bool = false) -> void:
@@ -326,33 +350,82 @@ static func apply_field_name_label(label: Label) -> void:
 	label.custom_minimum_size.x = FIELD_LABEL_WIDTH
 
 
-static func apply_compact(node: GraphNode, bg_color: Color) -> void:
-	var empty_title: StyleBoxEmpty = StyleBoxEmpty.new()
-	node.add_theme_stylebox_override(&"titlebar", empty_title)
+static func apply_compact(node: GraphNode, _bg_color: Color) -> void:
+	var empty: StyleBoxEmpty = StyleBoxEmpty.new()
+	empty.set_content_margin_all(0)
+	node.add_theme_stylebox_override(&"titlebar", empty)
+	node.add_theme_stylebox_override(&"titlebar_selected", empty)
+	node.add_theme_stylebox_override(&"panel", StyleBoxEmpty.new())
+	node.add_theme_stylebox_override(&"panel_selected", StyleBoxEmpty.new())
+	node.add_theme_stylebox_override(&"slot", StyleBoxEmpty.new())
+	node.add_theme_stylebox_override(&"slot_selected", StyleBoxEmpty.new())
 	node.add_theme_constant_override(&"separation", 0)
+	node.add_theme_constant_override(&"port_h_offset", 0)
+	node.add_theme_font_size_override(&"title_font_size", 1)
 	node.title = ""
 	node.clip_contents = false
+	apply_neutral_selection_styles(node)
 
+
+static func make_graph_node_selection_frame() -> StyleBoxFlat:
+	var style: StyleBoxFlat = StyleBoxFlat.new()
+	style.bg_color = Color(0, 0, 0, 0)
+	style.border_color = Color(0.55, 0.75, 1.0, 0.85)
+	style.set_border_width_all(2)
+	style.set_corner_radius_all(4)
+	style.set_content_margin_all(0)
+	return style
+
+
+static func sync_node_selection_outline(node: GraphNode) -> void:
+	if not is_instance_valid(node):
+		return
+	if node.selected:
+		node.add_theme_stylebox_override(&"frame", make_graph_node_selection_frame())
+	else:
+		node.remove_theme_stylebox_override(&"frame")
+
+
+static func sync_all_selection_outlines(graph_edit: GraphEdit) -> void:
+	if not is_instance_valid(graph_edit):
+		return
+	for child: Node in graph_edit.get_children():
+		if child is GraphNode:
+			sync_node_selection_outline(child as GraphNode)
+
+
+static func apply_compact_panel(panel: PanelContainer, bg_color: Color) -> void:
+	panel.add_theme_stylebox_override(&"panel", make_compact_panel_style(bg_color))
+
+
+static func make_compact_panel_style(bg_color: Color, selected: bool = false, hovered: bool = false) -> StyleBoxFlat:
 	var panel_style: StyleBoxFlat = StyleBoxFlat.new()
-	panel_style.bg_color = _accent_header_color(bg_color, COMPACT_LIGHTEN_AMOUNT, COMPACT_DARKEN_AMOUNT)
+	var fill: Color = _accent_header_color(bg_color, COMPACT_LIGHTEN_AMOUNT, COMPACT_DARKEN_AMOUNT)
+	if hovered and not selected:
+		fill = fill.lightened(0.06)
+	panel_style.bg_color = fill
 	panel_style.set_corner_radius_all(4)
-	panel_style.set_border_width_all(0)
+	if selected:
+		panel_style.set_border_width_all(2)
+		panel_style.border_color = Color(0.55, 0.75, 1.0, 0.85)
+	else:
+		panel_style.set_border_width_all(0)
 	panel_style.content_margin_left = 8
 	panel_style.content_margin_right = 8
 	panel_style.content_margin_top = 8
 	panel_style.content_margin_bottom = 8
-	node.add_theme_stylebox_override(&"panel", panel_style)
+	return panel_style
 
 
-static func apply_compact_panel(panel: PanelContainer, _bg_color: Color) -> void:
-	var empty_panel: StyleBoxEmpty = StyleBoxEmpty.new()
-	panel.add_theme_stylebox_override(&"panel", empty_panel)
-	if panel.get_child_count() > 0:
-		var title_label: Label = panel.get_child(0) as Label
-		if title_label != null:
-			title_label.add_theme_color_override(&"font_color", Color.WHITE)
-			title_label.add_theme_font_size_override(&"font_size", TITLE_FONT_SIZE)
-			_apply_bold_title_font_to_control(title_label, 800)
+static func apply_compact_panel_label(panel: PanelContainer) -> void:
+	if panel.get_child_count() == 0:
+		return
+	var title_label: Label = panel.get_child(0) as Label
+	if title_label == null:
+		return
+	title_label.add_theme_color_override(&"font_color", Color.WHITE)
+	title_label.add_theme_font_size_override(&"font_size", TITLE_FONT_SIZE)
+	_apply_bold_title_font_to_control(title_label, 800)
 
 
 static func _accent_header_color(accent: Color, lighten_amount: float, darken_amount: float) -> Color:
@@ -551,6 +624,36 @@ static func apply_popup_menu(menu: PopupMenu) -> void:
 	hover.bg_color = POPUP_MENU_HOVER_COLOR
 	hover.set_corner_radius_all(3)
 	menu.add_theme_stylebox_override(&"hover", hover)
+
+
+static func make_type_menu_row_style(row_index: int) -> StyleBoxFlat:
+	var style: StyleBoxFlat = StyleBoxFlat.new()
+	style.bg_color = get_row_strip_color(row_index)
+	style.set_border_width_all(0)
+	if row_index > 0:
+		style.border_width_top = 1
+		style.border_color = Color(0.38, 0.38, 0.44, 1.0)
+	style.content_margin_left = ROW_INNER_PADDING
+	style.content_margin_right = ROW_INNER_PADDING
+	style.content_margin_top = 2
+	style.content_margin_bottom = 2
+	return style
+
+
+static func apply_type_menu_panel(panel: PopupPanel) -> void:
+	var style: StyleBoxFlat = StyleBoxFlat.new()
+	style.bg_color = POPUP_MENU_BG_COLOR
+	style.border_color = POPUP_MENU_BORDER_COLOR
+	style.set_border_width_all(1)
+	style.set_corner_radius_all(6)
+	style.content_margin_left = 0
+	style.content_margin_right = 0
+	style.content_margin_top = 0
+	style.content_margin_bottom = 0
+	style.shadow_color = Color(0, 0, 0, 0.55)
+	style.shadow_size = 10
+	style.shadow_offset = Vector2(0, 3)
+	panel.add_theme_stylebox_override(&"panel", style)
 
 
 static func apply_muted_label(label: Label) -> void:
